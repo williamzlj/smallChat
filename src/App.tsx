@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from './i18n';
 import { Sidebar } from './components/Sidebar';
 import { MessageList } from './components/MessageList';
 import { InputBox } from './components/InputBox';
 import { ChatHistory } from './components/ChatHistory';
+import { MessageFlow, MessageFlowItem } from './components/MessageFlow';
 import { TodoList } from './components/Todo/TodoList';
 import { Login } from './components/Auth/Login';
 import { Register } from './components/Auth/Register';
@@ -15,7 +16,7 @@ import { useChat } from './hooks/useChat';
 import { useAuth } from './hooks/useAuth';
 import { useTodo } from './hooks/useTodo';
 import { ChatHistory as ChatHistoryType } from './types';
-import { ArrowLeft, Check, Download, FileText, Shield, Trash2, ListChecks, ChevronUp, ChevronDown, Menu, X, Copy, Globe } from 'lucide-react';
+import { ArrowLeft, Check, Download, FileText, Shield, Trash2, ListChecks, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Menu, X, Copy, Globe } from 'lucide-react';
 import { exportDatabase, importDatabase } from './db/indexedDB';
 
 type AuthMode = 'login' | 'register';
@@ -27,9 +28,9 @@ export default function App() {
   useEffect(() => {
     document.title = t('appTitle');
   }, [t, i18n.language]);
-  const [activeTab, setActiveTab] = useState<'chat' | 'history' | 'todo'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'history' | 'todo' | 'messageFlow'>('chat');
   const [showSavedToast, setShowSavedToast] = useState(false);
-  const [isFromHistory, setIsFromHistory] = useState(false);
+  const [sourceTab, setSourceTab] = useState<'history' | 'messageFlow' | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -75,6 +76,7 @@ export default function App() {
     loadChat,
     deleteChat,
     deleteMessage,
+    deleteMessageInChat,
     deleteAllMessages,
     clearMessages,
     updateChatTitle,
@@ -87,6 +89,52 @@ export default function App() {
     formatTimestamp,
     currentChatId,
   } = useChat(user?.id || null, botSettings.defaultReply);
+
+  // 留言流水：所有用户留言按时间倒序
+  const messageFlowItems = useMemo<MessageFlowItem[]>(() => {
+    const items: MessageFlowItem[] = [];
+    chatHistory.forEach(chat => {
+      chat.messages.forEach(msg => {
+        if (msg.sender === 'user') {
+          items.push({
+            chatId: chat.id,
+            chatTitle: chat.title,
+            messageId: msg.id,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            image: msg.image,
+          });
+        }
+      });
+    });
+    return items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [chatHistory]);
+
+  // 排序后的聊天列表（与聊天记录界面排序一致：置顶优先，再按时间倒序）
+  const sortedChatHistory = useMemo(() => {
+    return [...chatHistory].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }, [chatHistory]);
+
+  // 当前聊天在排序列表中的位置，用于上一个/下一个导航
+  const currentChatIndex = sortedChatHistory.findIndex(c => c.id === currentChatId.current);
+  const hasPrevChat = currentChatIndex > 0;
+  const hasNextChat = currentChatIndex >= 0 && currentChatIndex < sortedChatHistory.length - 1;
+
+  const handlePrevChat = () => {
+    if (hasPrevChat) {
+      handleLoadChat(sortedChatHistory[currentChatIndex - 1], sourceTab || 'history');
+    }
+  };
+
+  const handleNextChat = () => {
+    if (hasNextChat) {
+      handleLoadChat(sortedChatHistory[currentChatIndex + 1], sourceTab || 'history');
+    }
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -184,16 +232,16 @@ export default function App() {
   const handleNewChat = () => {
     clearMessages();
     setActiveTab('chat');
-    setIsFromHistory(false);
+    setSourceTab(null);
     if (isMobile) {
       setSidebarVisible(false);
     }
   };
 
-  const handleLoadChat = (chat: ChatHistoryType) => {
+  const handleLoadChat = (chat: ChatHistoryType, from: 'history' | 'messageFlow' = 'history') => {
     loadChat(chat);
     setActiveTab('chat');
-    setIsFromHistory(true);
+    setSourceTab(from);
     setShowSearchResults(false);
     setCurrentChatTitle(chat.title);
     if (isMobile) {
@@ -331,10 +379,10 @@ export default function App() {
 
   const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
 
-  const handleLoadFromSearch = (chatId: string, messageId?: string) => {
+  const handleLoadFromSearch = (chatId: string, messageId?: string, from: 'history' | 'messageFlow' = 'history') => {
     const chat = chatHistory.find(c => c.id === chatId);
     if (chat) {
-      handleLoadChat(chat);
+      handleLoadChat(chat, from);
       setHighlightMessageId(messageId || null);
       setTimeout(() => {
         setHighlightMessageId(null);
@@ -381,8 +429,8 @@ export default function App() {
         }
         setSelectedMessages([]);
         setShowSelectMode(false);
-        setActiveTab('history');
-        setIsFromHistory(false);
+        setActiveTab(sourceTab || 'history');
+        setSourceTab(null);
         clearMessages();
       }
     } else {
@@ -532,11 +580,11 @@ export default function App() {
                     {sidebarVisible ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                   </button>
                   
-                  {isFromHistory && (
+                  {sourceTab && (
                     <button
                       onClick={() => {
-                        setActiveTab('history');
-                        setIsFromHistory(false);
+                        setActiveTab(sourceTab);
+                        setSourceTab(null);
                         clearMessages();
                       }}
                       className={`p-1 rounded-lg transition-colors ${
@@ -546,12 +594,40 @@ export default function App() {
                       <ArrowLeft className="w-5 h-5" />
                     </button>
                   )}
+                  {sourceTab && sortedChatHistory.length > 1 && (
+                    <div className="flex items-center">
+                      <button
+                        onClick={handlePrevChat}
+                        disabled={!hasPrevChat}
+                        title={t('previousChat')}
+                        className={`p-1 rounded-lg transition-colors ${
+                          !hasPrevChat
+                            ? (isDarkMode ? 'text-gray-600 cursor-not-allowed' : 'text-gray-300 cursor-not-allowed')
+                            : (isDarkMode ? 'text-gray-400 hover:text-green-400 hover:bg-gray-700' : 'text-gray-500 hover:text-green-500 hover:bg-green-50')
+                        }`}
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={handleNextChat}
+                        disabled={!hasNextChat}
+                        title={t('nextChat')}
+                        className={`p-1 rounded-lg transition-colors ${
+                          !hasNextChat
+                            ? (isDarkMode ? 'text-gray-600 cursor-not-allowed' : 'text-gray-300 cursor-not-allowed')
+                            : (isDarkMode ? 'text-gray-400 hover:text-green-400 hover:bg-gray-700' : 'text-gray-500 hover:text-green-500 hover:bg-green-50')
+                        }`}
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </div>
+                  )}
                   <div className="min-w-0">
                     <div className="flex items-center space-x-2 overflow-hidden">
                       <h2 className={`font-medium text-sm sm:text-base ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-                        {isFromHistory ? t('loadedRecords') : t('chatWithBot', { name: botSettings.name })}
+                        {sourceTab ? t('loadedRecords') : t('chatWithBot', { name: botSettings.name })}
                       </h2>
-                      {isFromHistory && currentChatTitle && (
+                      {sourceTab && currentChatTitle && (
                         <span className={`text-xs sm:text-sm truncate px-2 py-0.5 rounded ${
                           isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'
                         }`}>
@@ -560,7 +636,7 @@ export default function App() {
                       )}
                     </div>
                     <p className="text-xs text-gray-400 mt-0.5 hidden sm:block">
-                      {isFromHistory ? t('clickToBack') : botSettings.chatHint || t('yourSecretSafe')}
+                      {sourceTab ? t('clickToBack') : botSettings.chatHint || t('yourSecretSafe')}
                     </p>
                   </div>
                 </div>
@@ -813,6 +889,65 @@ export default function App() {
                 />
               </div>
             )}
+          </div>
+        ) : activeTab === 'messageFlow' ? (
+          <div className="flex flex-col h-full">
+            <div className={`border-b px-2 sm:px-4 py-2 sm:py-3 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 sm:space-x-3">
+                  <button
+                    onClick={() => setSidebarVisible(!sidebarVisible)}
+                    className={`p-1 rounded-lg transition-colors ${
+                      isDarkMode ? 'text-gray-400 hover:text-green-400 hover:bg-gray-700' : 'text-gray-500 hover:text-green-500 hover:bg-green-50'
+                    }`}
+                  >
+                    {sidebarVisible ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                  </button>
+                  <div>
+                    <h2 className={`font-medium text-sm sm:text-base ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{t('messageFlow')}</h2>
+                    <p className="text-xs text-gray-400 mt-0.5">{t('totalRecords')} {messageFlowItems.length} {t('records')}</p>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setShowImportModal(true)}
+                    className={`flex items-center space-x-1 sm:space-x-2 px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                      isDarkMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-blue-500 hover:bg-blue-600'
+                    } text-white`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>{t('import')}</span>
+                  </button>
+                  <button
+                    onClick={() => setShowExportModal(true)}
+                    className={`flex items-center space-x-1 sm:space-x-2 px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                      isDarkMode ? 'bg-green-600 hover:bg-green-700' : 'bg-green-500 hover:bg-green-600'
+                    } text-white`}
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>{t('export')}</span>
+                  </button>
+                  <button
+                    onClick={handleClearChatHistory}
+                    className={`flex items-center space-x-1 sm:space-x-2 px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                      isDarkMode ? 'bg-red-600 hover:bg-red-700' : 'bg-red-500 hover:bg-red-600'
+                    } text-white`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>{t('clear')}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <MessageFlow
+                items={messageFlowItems}
+                onLocate={(chatId, messageId) => handleLoadFromSearch(chatId, messageId, 'messageFlow')}
+                onDelete={deleteMessageInChat}
+                isDarkMode={isDarkMode}
+                formatTimestamp={formatTimestamp}
+              />
+            </div>
           </div>
         ) : (
           <TodoList

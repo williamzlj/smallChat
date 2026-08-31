@@ -30,6 +30,19 @@ export const ChatHistory = ({ history, onLoad, onDelete, onUpdateTitle, onUpdate
   const [selectedChatIds, setSelectedChatIds] = useState<string[]>([]);
   const itemsPerPage = 20;
 
+  const highlightKeyword = (text: string, keyword: string) => {
+    if (!keyword.trim()) return text;
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escaped})`, 'gi');
+    const parts = text.split(regex);
+    return parts.map((part, index) => {
+      if (part.toLowerCase() === keyword.toLowerCase()) {
+        return <mark key={index} className="bg-yellow-300 text-gray-900 px-0.5 rounded">{part}</mark>;
+      }
+      return part;
+    });
+  };
+
   const filteredHistory = history.filter(chat => {
     const chatDate = new Date(chat.createdAt);
     
@@ -190,17 +203,14 @@ export const ChatHistory = ({ history, onLoad, onDelete, onUpdateTitle, onUpdate
           <button
             onClick={handleSelectAll}
             title={t('selectAll')}
-            className={`flex items-center justify-center p-1.5 rounded-lg transition-colors ${
-              isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              selectedChatIds.length === currentPageData.length && currentPageData.length > 0
+                ? (isDarkMode ? 'bg-green-900 text-green-400 hover:bg-green-800' : 'bg-green-100 text-green-600 hover:bg-green-200')
+                : (isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-700' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200')
             }`}
           >
-            <CheckSquare
-              className={`w-4 h-4 ${
-                selectedChatIds.length === currentPageData.length && currentPageData.length > 0
-                  ? (isDarkMode ? 'text-green-400' : 'text-green-500')
-                  : ''
-              }`}
-            />
+            <CheckSquare className="w-4 h-4" />
+            <span>{t('selectAll')}</span>
           </button>
           <Calendar className={`w-4 h-4 hidden sm:block ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`} />
           <div className="relative flex-shrink-0" style={{ width: '130px', minWidth: '130px', maxWidth: '170px', height: '40px' }}>
@@ -360,7 +370,7 @@ export const ChatHistory = ({ history, onLoad, onDelete, onUpdateTitle, onUpdate
                     ) : (
                       <div className="flex items-center space-x-2 mb-1">
                         <p className={`text-sm font-medium truncate ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-                          {chat.title}
+                          {highlightKeyword(chat.title, searchQuery)}
                         </p>
                         <button
                           onClick={(e) => {
@@ -381,12 +391,12 @@ export const ChatHistory = ({ history, onLoad, onDelete, onUpdateTitle, onUpdate
                       <div className="flex items-start space-x-2 mb-1">
                         <FileText className="w-3 h-3 text-gray-400 mt-0.5 flex-shrink-0" />
                         <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-600'} px-2 py-1 rounded`} style={{ backgroundColor: isDarkMode ? '#4A5568' : '#D1D5DB', wordBreak: 'break-word', overflowWrap: 'break-word', maxHeight: '10em', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 10, WebkitBoxOrient: 'vertical' }}>
-                          {chat.note}
+                          {highlightKeyword(chat.note, searchQuery)}
                         </p>
                       </div>
                     )}
                     <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-500'}`} style={{ wordBreak: 'break-word', overflowWrap: 'break-word', maxWidth: '100%', whiteSpace: 'pre-wrap' }}>
-                      {chat.messages.length > 0 ? chat.messages[0].content.slice(0, 80) + (chat.messages[0].content.length > 80 ? '...' : '') : t('emptyChat')}
+                      {chat.messages.length > 0 ? highlightKeyword(chat.messages[0].content.slice(0, 80) + (chat.messages[0].content.length > 80 ? '...' : ''), searchQuery) : t('emptyChat')}
                     </p>
                   </div>
                 </div>

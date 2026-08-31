@@ -1,12 +1,12 @@
 import { useTranslation } from 'react-i18next';
-import { TreePine, History, Plus, Settings, Moon, Sun, Info, User, ListTodo, Shield, Globe } from 'lucide-react';
+import { TreePine, History, Plus, Settings, Moon, Sun, Info, User, ListTodo, Shield, Globe, MessageSquare } from 'lucide-react';
 import { useState } from 'react';
 import { User as UserType, BotSettings } from '../types/auth';
 import { LanguageSelector } from './LanguageSelector';
 
 interface SidebarProps {
-  activeTab: 'chat' | 'history' | 'todo';
-  onTabChange: (tab: 'chat' | 'history' | 'todo') => void;
+  activeTab: 'chat' | 'history' | 'todo' | 'messageFlow';
+  onTabChange: (tab: 'chat' | 'history' | 'todo' | 'messageFlow') => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
   onOpenAdmin: () => void;
@@ -69,6 +69,17 @@ export const Sidebar = ({ activeTab, onTabChange, onNewChat, onOpenSettings, onO
           >
             <History className="w-8 h-8" />
             <span className="text-sm font-medium mt-2">{t('history')}</span>
+          </button>
+          <button
+            onClick={() => onTabChange('messageFlow')}
+            className={`flex flex-col items-center justify-center py-3 px-2 rounded-lg transition-all duration-200 ${
+              activeTab === 'messageFlow'
+                ? `${isDarkMode ? 'bg-gray-600 text-green-400' : 'bg-white shadow-sm text-green-600'}`
+                : `${isDarkMode ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-700'}`
+            }`}
+          >
+            <MessageSquare className="w-8 h-8" />
+            <span className="text-sm font-medium mt-2">{t('messageFlow')}</span>
           </button>
           <button
             onClick={() => onTabChange('todo')}

@@ -209,6 +209,44 @@ export const useChat = (userId: string | null, defaultReply: string = '收到！
     }
   }, []);
 
+  // 删除任意对话中的留言（留言流水用），若对话删空则一并删除该对话
+  const deleteMessageInChat = useCallback(async (chatId: string, messageId: string) => {
+    try {
+      await dbDeleteMessage(messageId);
+    } catch (error) {
+      console.error('Failed to delete message:', error);
+    }
+
+    if (currentChatId.current === chatId) {
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+    }
+
+    const chat = chatHistoryRef.current.find(c => c.id === chatId);
+    if (!chat) return;
+
+    const filtered = chat.messages.filter(m => m.id !== messageId);
+    if (filtered.length === 0) {
+      if (currentChatId.current === chatId) {
+        currentChatId.current = null;
+      }
+      try {
+        await deleteChatHistory(chatId);
+      } catch (error) {
+        console.error('Failed to delete chat:', error);
+      }
+      setChatHistory(prev => prev.filter(c => c.id !== chatId));
+      return;
+    }
+
+    const updatedChat = { ...chat, messages: filtered, updatedAt: new Date() };
+    try {
+      await saveChatHistory(updatedChat);
+    } catch (error) {
+      console.error('Failed to save chat:', error);
+    }
+    setChatHistory(prev => prev.map(c => c.id === chatId ? updatedChat : c));
+  }, []);
+
   const deleteAllMessages = useCallback(async () => {
     try {
       for (const message of messages) {
@@ -384,6 +422,7 @@ export const useChat = (userId: string | null, defaultReply: string = '收到！
     loadChat,
     deleteChat,
     deleteMessage,
+    deleteMessageInChat,
     deleteAllMessages,
     clearMessages,
     updateChatTitle,
