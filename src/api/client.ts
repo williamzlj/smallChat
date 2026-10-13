@@ -58,14 +58,17 @@ async function request<T>(action: string, opts: RequestOptions = {}): Promise<T>
   if (params) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
   }
+  // token 走 URL query 参数：景安 WAF 拦截 OPTIONS 预检，不能用自定义请求头
+  // （X-Auth-Token 会触发预检；放 query 后整条请求为 simple request，不发 OPTIONS）
+  if (auth) {
+    const token = tokenStore.get();
+    if (token) url.searchParams.set('token', token);
+  }
 
   const headers: Record<string, string> = {};
   if (body !== undefined && body !== null) {
-    headers['Content-Type'] = 'application/json';
-  }
-  if (auth) {
-    const token = tokenStore.get();
-    if (token) headers['X-Auth-Token'] = token;
+    // text/plain 是 CORS simple content type，不触发预检；body 仍是 JSON 字符串
+    headers['Content-Type'] = 'text/plain;charset=UTF-8';
   }
 
   let resp: Response;
@@ -177,9 +180,12 @@ export const api = {
       form.append('file', file, filename);
 
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_BASE}/api.php?action=upload`);
-      const token = tokenStore.get();
-      if (token) xhr.setRequestHeader('X-Auth-Token', token);
+    // token 走 URL query：景安 WAF 拦截 OPTIONS 预检，不能用自定义请求头
+    const token = tokenStore.get();
+    const uploadUrl = token
+      ? `${API_BASE}/api.php?action=upload&token=${encodeURIComponent(token)}`
+      : `${API_BASE}/api.php?action=upload`;
+    xhr.open('POST', uploadUrl);
 
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) {
