@@ -1,0 +1,36 @@
+{
+  "name": "smallChat",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "homepage": "https://williamzlj.github.io/smallChat",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "type-check": "tsc",
+    "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist",
+    "deploy:repo": "cross-env REPO_NAME=YOUR_REPO_NAME npm run build && gh-pages -d dist"
+  },
+  "dependencies": {
+    "lucide-react": "^0.294.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.16",
+    "cross-env": "^10.1.0",
+    "gh-pages": "^6.3.0",
+    "pngjs": "^7.0.0",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8",
+    "vite-plugin-pwa": "^1.3.0",
+    "workbox-window": "^7.4.1"
+  }
+}
