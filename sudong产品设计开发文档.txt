@@ -1,0 +1,275 @@
+================================================================================
+                      Sudong（树洞）产品设计开发文档
+================================================================================
+
+版本：v0.0.0
+作者：张亮军
+仓库：https://github.com/williamzlj/sudong
+
+================================================================================
+一、项目概述
+================================================================================
+
+Sudong 是一个基于 React 的单页应用（SPA），采用纯前端架构，所有数据存储在
+浏览器端 IndexedDB 中，无需后端服务器即可运行。
+
+================================================================================
+二、项目目录结构
+================================================================================
+
+sudong/
+├── public/                     # 静态资源
+│   ├── icon.svg               # PWA 图标
+│   ├── manifest.json          # PWA 清单
+│   ├── pwa-192x192.png        # PWA 小图标
+│   └── pwa-512x512.png        # PWA 大图标
+├── src/                        # 源代码
+│   ├── components/            # 组件目录
+│   │   ├── Admin/             # 管理员面板
+│   │   │   └── AdminPanel.tsx
+│   │   ├── Auth/              # 认证相关
+│   │   │   ├── ImageManager.tsx    # 图片管理
+│   │   │   ├── Login.tsx           # 登录页
+│   │   │   ├── ProfileSettings.tsx # 个人设置
+│   │   │   └── Register.tsx        # 注册页
+│   │   ├── Todo/              # 待办事项
+│   │   │   ├── TodoItem.tsx
+│   │   │   ├── TodoList.tsx
+│   │   │   └── TodoModal.tsx
+│   │   ├── ChatHistory.tsx    # 聊天记录管理
+│   │   ├── InputBox.tsx       # 消息输入框
+│   │   ├── LanguageSelector.tsx # 语言选择器
+│   │   ├── MessageBubble.tsx  # 消息气泡
+│   │   ├── MessageList.tsx    # 消息列表
+│   │   └── Sidebar.tsx        # 侧边栏导航
+│   ├── db/                    # 数据库层
+│   │   ├── indexedDB.ts       # 浏览器 IndexedDB 操作
+│   │   └── sqlite.ts          # Node.js SQLite 操作（服务端备选）
+│   ├── hooks/                 # 自定义 Hooks
+│   │   ├── useAuth.ts         # 认证逻辑
+│   │   ├── useChat.ts         # 聊天逻辑
+│   │   └── useTodo.ts         # 待办事项逻辑
+│   ├── i18n/                  # 国际化
+│   │   └── index.ts           # i18next 配置 + 翻译资源
+│   ├── types/                 # TypeScript 类型定义
+│   │   ├── auth.ts            # 用户 & 机器人类型
+│   │   ├── index.ts           # 消息 & 聊天记录类型
+│   │   └── todo.ts            # 待办事项类型
+│   ├── App.tsx                # 根组件（路由与状态管理）
+│   ├── index.css              # 全局样式（Tailwind + 自定义）
+│   └── main.tsx               # 应用入口
+├── index.html                  # HTML 入口
+├── package.json
+├── tailwind.config.js
+├── tsconfig.json
+├── vite.config.ts             # Vite + PWA 配置
+└── deploy.bat                 # Windows 部署脚本
+
+================================================================================
+三、组件架构设计
+================================================================================
+
+---- 3.1 组件树 ----
+App (根组件)
+├── Sidebar (侧边栏导航)
+│   └── LanguageSelector (语言切换)
+├── [chat Tab]
+│   ├── 状态栏（返回、多选、滚动定位按钮）
+│   ├── MessageList (消息列表)
+│   │   └── MessageBubble[] (消息气泡 × N)
+│   └── InputBox (输入框 + 图片上传)
+├── [history Tab]
+│   ├── 状态栏（搜索、导入、导出、清空按钮）
+│   ├── 搜索结果视图
+│   └── ChatHistory (聊天记录列表)
+│       └── 每条记录：标题、备注、操作按钮
+├── [todo Tab]
+│   └── TodoList
+│       ├── TodoModal (添加/编辑弹窗)
+│       └── TodoItem[] (待办项 × N)
+├── ProfileSettings (个人设置弹窗)
+├── AdminPanel (管理员面板弹窗)
+├── ExportModal (导出弹窗)
+└── ImportModal (导入弹窗)
+
+---- 3.2 状态管理设计 ----
+项目未使用 Redux/Zustand 等状态管理库，采用 React Hooks 进行状态管理：
+
+- useAuth：管理用户认证状态、机器人设置
+- useChat：管理消息列表、聊天历史、搜索功能
+- useTodo：管理待办事项状态
+
+App.tsx 作为根组件，通过 props 将状态和方法向下传递给子组件。
+
+---- 3.3 路由设计 ----
+无传统路由库，使用 Tab 切换模式（activeTab: 'chat' | 'history' | 'todo'）：
+- chat：聊天界面
+- history：聊天记录管理
+- todo：待办事项
+
+认证状态控制：
+- 未登录 → 显示 Login / Register 组件
+- 已登录 → 显示主界面
+
+================================================================================
+四、数据模型设计
+================================================================================
+
+---- 4.1 User（用户）----
+字段         类型       说明
+id           string     唯一ID（时间戳36进制+随机字符串）
+username     string     用户名
+email        string     邮箱（唯一）
+password     string     密码（简单哈希存储）
+avatar       string     头像颜色类名（如 bg-blue-500）
+userNameColor string   用户名颜色类名
+isActive     boolean    是否激活
+isBanned     boolean    是否禁言
+role         string     角色（user/admin）
+createdAt    Date       创建时间
+
+---- 4.2 BotSettings（机器人设置）----
+字段               类型     说明
+userId            string   关联用户ID
+name              string   机器人名称
+avatar            string   头像颜色类名
+defaultReply      string   默认回复内容
+productName       string   产品名称
+productDescription string  产品介绍
+chatHint          string   聊天提示语
+chatBackgroundText string 聊天背景文字
+fontSize          number   字体大小（默认16）
+
+---- 4.3 Message（消息）----
+字段         类型         说明
+id           string       唯一ID
+chatId       string       所属聊天记录ID
+content      string       消息内容
+sender       'user'|'bot' 发送者
+image        string?      图片（可选）
+timestamp    Date         时间戳
+
+---- 4.4 ChatHistory（聊天记录）----
+字段         类型         说明
+id           string       唯一ID
+userId       string       所属用户ID
+title        string       对话标题
+note         string?      备注（可选）
+messages     Message[]    关联消息列表
+isPinned     boolean?     是否置顶
+createdAt    Date         创建时间
+updatedAt    Date         更新时间
+
+---- 4.5 Todo（待办事项）----
+字段         类型           说明
+id           string         唯一ID
+userId       string         所属用户ID
+title        string         待办标题
+note         string         待办内容
+deadline     Date           截止日期
+isPinned     boolean        是否置顶
+status       TodoStatus     状态：pending|completed|reference
+createdAt    Date           创建时间
+
+================================================================================
+五、IndexedDB 数据库设计
+================================================================================
+
+数据库名称：TreeHoleDB
+当前版本：4
+
+Object Store（表）：
+┌──────────────────┬──────────┬─────────────────────────┐
+│ Store Name       │ KeyPath  │ Indexes                  │
+├──────────────────┼──────────┼─────────────────────────┤
+│ users            │ id       │ email(unique), isActive,│
+│                  │          │ isBanned                 │
+│ bot_settings     │ userId   │                         │
+│ chat_history     │ id       │ userId, createdAt        │
+│ messages         │ id       │ chatId, timestamp        │
+│ todos            │ id       │ userId, isCompleted,     │
+│                  │          │ isPinned                 │
+│ admin_users      │ id       │ username(unique)         │
+└──────────────────┴──────────┴─────────────────────────┘
+
+数据迁移策略：
+- 通过 DB_VERSION 递增驱动 onupgradeneeded 回调
+- v4 迁移：为旧 bot_settings 数据添加 fontSize 默认值（16）
+
+================================================================================
+六、国际化设计
+================================================================================
+
+---- 6.1 技术选型 ----
+- i18next：核心国际化框架
+- react-i18next：React 绑定
+- i18next-browser-languagedetector：自动检测浏览器语言
+
+---- 6.2 支持语言 ----
+| 代码 | 语言     |
+|------|---------|
+| zh   | 简体中文  |
+| en   | 英文     |
+| ja   | 日文     |
+| ko   | 韩文     |
+
+---- 6.3 翻译资源结构 ----
+所有翻译集中在 src/i18n/index.ts 的 resources 对象中，扁平 key-value 结构。
+
+命名规范：
+- 直接语义命名：login, register, search, delete
+- 驼峰命名长句：selectAllChats, batchDeleteChats
+- 参数化：chatWithBot: '与{{name}}对话'
+
+================================================================================
+七、UI/UX 设计规范
+================================================================================
+
+---- 7.1 响应式设计 ----
+断点策略（TailwindCSS）：
+- sm: 640px  - 平板竖屏
+- md: 768px  - 平板横屏 / 小桌面
+- lg: 1024px - 桌面
+
+手机端（< 768px）特殊处理：
+- 侧边栏默认隐藏，通过按钮切换
+- 部分文字标签隐藏（hidden sm:inline/block）
+- 日期选择框中 Calendar 图标隐藏（hidden sm:block）
+- 自适应安全区域（iPhone 底部刘海）
+
+---- 7.2 暗色模式 ----
+- 通过 isDarkMode 状态控制
+- 使用 Tailwind dark: 前缀 + 手动 className 条件判断
+- 切换按钮位于侧边栏底部
+- 颜色体系：
+  - 亮色：bg-white / bg-gray-100 / text-gray-800 / border-gray-200
+  - 暗色：bg-gray-800 / text-white / border-gray-700
+
+---- 7.3 主题色 ----
+- 主色：绿色系（bg-green-500, text-green-500）
+- 强调色：蓝色（导出/导入按钮）
+- 危险色：红色（删除按钮）
+- 边框/背景：灰色系
+
+================================================================================
+八、部署架构
+================================================================================
+
+部署目标：GitHub Pages
+部署地址：https://williamzlj.github.io/sudong
+
+部署流程：
+1. npm run build          → Vite 构建到 dist/
+2. npm run deploy          → gh-pages 推送 dist/ 到 gh-pages 分支
+3. GitHub Pages 自动从 gh-pages 分支读取并发布
+
+Vite base 配置：
+- 开发环境：base: '/'
+- 生产环境：base: '/sudong/'（匹配仓库名）
+
+PWA 配置：
+- registerType: autoUpdate（自动更新 Service Worker）
+- workbox CacheFirst 策略缓存图片
+- 静态资源预缓存
+
+================================================================================
