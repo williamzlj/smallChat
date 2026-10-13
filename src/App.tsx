@@ -91,7 +91,7 @@ export default function App() {
   // 启动屏
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
+      <div className="min-h-app flex items-center justify-center bg-gray-100 dark:bg-gray-900">
         <div className="flex flex-col items-center text-gray-400">
           <Hash className="w-10 h-10 text-green-500 mb-3" />
           <p className="text-sm">smallChat</p>
@@ -119,7 +119,7 @@ export default function App() {
   };
 
   return (
-    <div className={`flex h-screen overflow-hidden ${isDarkMode ? 'dark bg-gray-900' : 'bg-gray-100'}`}>
+    <div className={`flex h-app overflow-hidden ${isDarkMode ? 'dark bg-gray-900' : 'bg-gray-100'}`}>
       {/* 侧边栏：桌面常驻 / 移动抽屉 */}
       {(sidebarVisible || !isMobile) && (
         <div
