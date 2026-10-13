@@ -1,18 +1,21 @@
 import { useState } from 'react';
-import { RegisterCredentials } from '../../types/auth';
-import { Eye, EyeOff, User, Lock, Mail, UserPlus } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { LanguageSelector } from '../LanguageSelector';
+import { Eye, EyeOff, Lock, User as UserIcon, UserPlus, KeyRound, Smile } from 'lucide-react';
+import { AuthResult } from '../../hooks/useAuth';
 
 interface RegisterProps {
-  onRegister: (credentials: RegisterCredentials) => { success: boolean; message: string };
+  onRegister: (
+    username: string,
+    password: string,
+    inviteCode: string,
+    nickname?: string,
+  ) => Promise<AuthResult>;
   onSwitchToLogin: () => void;
 }
 
 export const Register = ({ onRegister, onSwitchToLogin }: RegisterProps) => {
-  const { t } = useTranslation();
   const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -23,21 +26,30 @@ export const Register = ({ onRegister, onSwitchToLogin }: RegisterProps) => {
     e.preventDefault();
     setError('');
 
-    if (password !== confirmPassword) {
-      setError(t('passwordsDoNotMatch'));
+    if (!/^[A-Za-z0-9_]{2,20}$/.test(username.trim())) {
+      setError('用户名需为 2~20 位字母、数字或下划线');
       return;
     }
-
+    if (!inviteCode.trim()) {
+      setError('请填写邀请码');
+      return;
+    }
     if (password.length < 6) {
-      setError(t('newPasswordTooShort'));
+      setError('密码至少 6 位');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('两次输入的密码不一致');
       return;
     }
 
     setIsLoading(true);
-
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    const result = onRegister({ username, email, password });
+    const result = await onRegister(
+      username.trim(),
+      password,
+      inviteCode.trim(),
+      nickname.trim() || undefined,
+    );
     if (!result.success) {
       setError(result.message);
     }
@@ -52,51 +64,69 @@ export const Register = ({ onRegister, onSwitchToLogin }: RegisterProps) => {
             <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
               <UserPlus className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-800">{t('registerTitle')}</h1>
-            <p className="text-gray-500 mt-2">{t('registerSubtitle')}</p>
+            <h1 className="text-2xl font-bold text-gray-800">注册账号</h1>
+            <p className="text-gray-500 mt-2 text-sm">需要邀请码才能注册</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{t('username')}</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">用户名</label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type="text"
                   value={username}
-                  onChange={e => setUsername(e.target.value)}
-                  placeholder={t('usernamePlaceholder')}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="字母/数字/下划线，2~20 位"
+                  autoComplete="username"
+                  className="w-full pl-10 pr-4 py-3 text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
                   required
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{t('email')}</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                昵称 <span className="text-gray-400 font-normal">（选填，默认同用户名）</span>
+              </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Smile className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder={t('emailPlaceholder')}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  placeholder="群里显示的名字"
+                  className="w-full pl-10 pr-4 py-3 text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">邀请码</label>
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="请输入邀请码"
+                  className="w-full pl-10 pr-4 py-3 text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
                   required
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{t('password')}</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">密码</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder={t('newPasswordPlaceholder')}
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="至少 6 位"
+                  autoComplete="new-password"
+                  className="w-full pl-10 pr-12 py-3 text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
                   required
                 />
                 <button
@@ -110,15 +140,16 @@ export const Register = ({ onRegister, onSwitchToLogin }: RegisterProps) => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">{t('confirmPassword')}</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">确认密码</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  placeholder={t('confirmPasswordPlaceholder')}
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="再输一次密码"
+                  autoComplete="new-password"
+                  className="w-full pl-10 pr-4 py-3 text-base border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
                   required
                 />
               </div>
@@ -133,33 +164,24 @@ export const Register = ({ onRegister, onSwitchToLogin }: RegisterProps) => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 rounded-xl font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 rounded-xl font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed text-base"
             >
-              {isLoading ? t('registering') : t('register')}
+              {isLoading ? '注册中…' : '注册并登录'}
             </button>
           </form>
 
           <div className="mt-6 text-center">
-            <p className="text-gray-600">
-              {t('haveAccount')}{' '}
+            <p className="text-gray-600 text-sm">
+              已有账号？{' '}
               <button
                 onClick={onSwitchToLogin}
                 className="text-green-600 hover:text-green-700 font-medium underline"
               >
-                {t('loginNow')}
+                返回登录
               </button>
             </p>
-            <div className="flex justify-center mt-4">
-              <LanguageSelector />
-            </div>
           </div>
         </div>
-
-        <p className="text-center text-gray-500 text-xs mt-4 italic">
-          {t('languagePrompt')}
-        </p>
-
-        <p className="text-center text-gray-400 text-sm mt-4">{t('registerIntro')}</p>
       </div>
     </div>
   );

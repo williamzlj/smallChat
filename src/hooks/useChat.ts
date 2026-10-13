@@ -1,438 +1,316 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Message, ChatHistory, SearchResult } from '../types';
-import { saveChatHistory, getChatHistoryByUserId, deleteChatHistory, saveMessage, getMessagesByChatId, deleteMessage as dbDeleteMessage } from '../db/indexedDB';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { api } from '../api/client';
+import { ChatMessage, User } from '../api/types';
+import { POLL_INTERVAL, INITIAL_MSG_LIMIT, HISTORY_LIMIT } from '../config';
 
-const generateId = (): string => {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
-};
+// 单个群聊的消息：初始加载 + 增量轮询 + 向上翻历史 + 发送/上传/删除
+export const useChat = (groupId: number | null, currentUser: User | null) => {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
-export const generateTitle = (messages: Message[], t: (key: string) => string): string => {
-  if (messages.length === 0) return t('noTitleChat');
-  const firstUserMessage = messages.find(m => m.sender === 'user');
-  if (firstUserMessage) {
-    return firstUserMessage.content.length > 30
-      ? firstUserMessage.content.slice(0, 30) + '...'
-      : firstUserMessage.content;
-  }
-  return t('noTitleChat');
-};
+  const maxIdRef = useRef(0);
+  const minIdRef = useRef(0);
+  const groupIdRef = useRef<number | null>(groupId);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-const formatTimestamp = (date: Date): string => {
-  const d = new Date(date);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  const seconds = String(d.getSeconds()).padStart(2, '0');
-  return `${year}/${month}/${day} ${hours}:${minutes}:${seconds}`;
-};
-
-export const useChat = (userId: string | null, defaultReply: string = '收到！') => {
-  const { t } = useTranslation();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [chatHistory, setChatHistory] = useState<ChatHistory[]>([]);
-  const [isTyping, setIsTyping] = useState(false);
-  const currentChatId = useRef<string | null>(null);
-  const defaultReplyRef = useRef(defaultReply);
-  const chatHistoryRef = useRef<ChatHistory[]>([]);
-  const userIdRef = useRef(userId);
-
-  useEffect(() => {
-    userIdRef.current = userId;
-  }, [userId]);
-
-  useEffect(() => {
-    chatHistoryRef.current = chatHistory;
-  }, [chatHistory]);
-
-  useEffect(() => {
-    defaultReplyRef.current = defaultReply;
-  }, [defaultReply]);
-
-  useEffect(() => {
-    const loadHistory = async () => {
-      if (!userId) return;
-      try {
-        const histories = await getChatHistoryByUserId(userId);
-        // 排序：置顶记录在前，然后按创建日期降序
-        const sortedHistories = [...histories].sort((a, b) => {
-          if (a.isPinned && !b.isPinned) return -1;
-          if (!a.isPinned && b.isPinned) return 1;
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        });
-        setChatHistory(sortedHistories);
-      } catch (error) {
-        console.error('Failed to load chat history:', error);
-      }
-    };
-
-    loadHistory();
-  }, [userId]);
-
-  const sendMessage = useCallback(async (content: string, image?: string) => {
-    const uid = userIdRef.current;
-    const userMessage: Message = {
-      id: generateId(),
-      content: content.trim(),
-      sender: 'user',
-      timestamp: new Date(),
-      image: image,
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-
-    await new Promise(resolve => setTimeout(resolve, 200));
-
-    const botMessage: Message = {
-      id: generateId(),
-      content: defaultReplyRef.current,
-      sender: 'bot',
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => {
-      const newMessages = [...prev, botMessage];
-      if (uid) {
-        setTimeout(() => saveCurrentChat(uid, newMessages), 0);
-      }
-      return newMessages;
+  // 增量消息合并（upsert，按 id 排序；temp 消息保留）
+  const mergeMessages = useCallback((incoming: ChatMessage[]) => {
+    if (incoming.length === 0) return;
+    setMessages((prev) => {
+      // 轮询可能先于本地 send 成功回调拿到刚发的消息：丢弃对应的 temp，避免重复
+      const tempDuplicatesServer = (t: ChatMessage) =>
+        !!t.clientTempId &&
+        incoming.some(
+          (m) =>
+            m.user_id === t.user_id &&
+            m.type === t.type &&
+            (t.type === 'text' ? m.content === t.content : m.file?.name === t.content),
+        );
+      const map = new Map<number | string, ChatMessage>();
+      prev.forEach((m) => {
+        if (tempDuplicatesServer(m)) return;
+        map.set(m.clientTempId ? `tmp:${m.clientTempId}` : m.id, m);
+      });
+      incoming.forEach((m) => {
+        map.set(m.id, m);
+        if (m.id > maxIdRef.current) maxIdRef.current = m.id;
+      });
+      return Array.from(map.values()).sort((a, b) => realId(a) - realId(b));
     });
   }, []);
 
-  const saveCurrentChat = useCallback(async (uid: string, msgs?: Message[]) => {
-    const messagesToSave = msgs || messages;
-    if (messagesToSave.length === 0 || !uid) return;
-
-    const chatId = currentChatId.current;
-    const chats = chatHistoryRef.current;
-
-    try {
-      if (chatId) {
-        const existingChat = chats.find(c => c.id === chatId);
-        if (existingChat && currentChatId.current === chatId) {
-          const updatedChat: ChatHistory = {
-            ...existingChat,
-            messages: [...messagesToSave],
-            updatedAt: new Date(),
-          };
-          await saveChatHistory(updatedChat);
-          if (currentChatId.current === chatId) {
-            setChatHistory(prev => {
-              const updated = prev.map(c => c.id === chatId ? updatedChat : c);
-              return updated.sort((a, b) => {
-                if (a.isPinned && !b.isPinned) return -1;
-                if (!a.isPinned && b.isPinned) return 1;
-                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-              });
-            });
-          }
-        }
-      } else {
-        const newChat: ChatHistory = {
-          id: generateId(),
-          userId: uid,
-          title: generateTitle(messagesToSave, t),
-          messages: [...messagesToSave],
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        currentChatId.current = newChat.id;
-        await saveChatHistory(newChat);
-        setChatHistory(prev => {
-          const updated = [newChat, ...prev];
-          return updated.sort((a, b) => {
-            if (a.isPinned && !b.isPinned) return -1;
-            if (!a.isPinned && b.isPinned) return 1;
-            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-          });
-        });
-      }
-    } catch (error) {
-      console.error('Failed to save chat:', error);
-    }
-  }, [messages]);
-
-  const loadChat = useCallback(async (chat: ChatHistory) => {
-    try {
-      const chatMessages = await getMessagesByChatId(chat.id);
-      const loadedMessages = chatMessages.length > 0 ? chatMessages : chat.messages;
-      setMessages(loadedMessages);
-    } catch {
-      setMessages(chat.messages);
-    }
-    currentChatId.current = chat.id;
-  }, []);
-
-  const deleteChat = useCallback(async (chatId: string) => {
-    if (currentChatId.current === chatId) {
-      currentChatId.current = null;
-    }
-
-    try {
-      await deleteChatHistory(chatId);
-      setChatHistory(prev => prev.filter(c => c.id !== chatId));
-    } catch (error) {
-      console.error('Failed to delete chat:', error);
-      setChatHistory(prev => prev.filter(c => c.id !== chatId));
-    }
-  }, []);
-
-  const deleteMessage = useCallback(async (messageId: string) => {
-    try {
-      await dbDeleteMessage(messageId);
-    } catch (error) {
-      console.error('Failed to delete message:', error);
-    }
-
-    setMessages(prev => prev.filter(m => m.id !== messageId));
-
-    // Also update the chat_history record so the deletion persists across reloads
-    const chatId = currentChatId.current;
-    if (chatId) {
-      const chats = chatHistoryRef.current;
-      const existingChat = chats.find(c => c.id === chatId);
-      if (existingChat && currentChatId.current === chatId) {
-        const filtered = existingChat.messages.filter(m => m.id !== messageId);
-        const updatedChat = {
-          ...existingChat,
-          messages: filtered,
-          updatedAt: new Date(),
-        };
-        saveChatHistory(updatedChat).then(() => {
-          if (currentChatId.current === chatId) {
-            setChatHistory(prevHist => prevHist.map(c => c.id === chatId ? updatedChat : c));
-          }
-        });
-      }
-    }
-  }, []);
-
-  // 删除任意对话中的留言（留言流水用），若对话删空则一并删除该对话
-  const deleteMessageInChat = useCallback(async (chatId: string, messageId: string) => {
-    try {
-      await dbDeleteMessage(messageId);
-    } catch (error) {
-      console.error('Failed to delete message:', error);
-    }
-
-    if (currentChatId.current === chatId) {
-      setMessages(prev => prev.filter(m => m.id !== messageId));
-    }
-
-    const chat = chatHistoryRef.current.find(c => c.id === chatId);
-    if (!chat) return;
-
-    const filtered = chat.messages.filter(m => m.id !== messageId);
-    if (filtered.length === 0) {
-      if (currentChatId.current === chatId) {
-        currentChatId.current = null;
-      }
-      try {
-        await deleteChatHistory(chatId);
-      } catch (error) {
-        console.error('Failed to delete chat:', error);
-      }
-      setChatHistory(prev => prev.filter(c => c.id !== chatId));
+  // 进入群聊：拉最近消息
+  useEffect(() => {
+    groupIdRef.current = groupId;
+    if (groupId === null) {
+      setMessages([]);
+      maxIdRef.current = 0;
+      minIdRef.current = 0;
       return;
     }
 
-    const updatedChat = { ...chat, messages: filtered, updatedAt: new Date() };
-    try {
-      await saveChatHistory(updatedChat);
-    } catch (error) {
-      console.error('Failed to save chat:', error);
-    }
-    setChatHistory(prev => prev.map(c => c.id === chatId ? updatedChat : c));
-  }, []);
-
-  const deleteAllMessages = useCallback(async () => {
-    try {
-      for (const message of messages) {
-        await dbDeleteMessage(message.id);
-      }
-      
-      if (currentChatId.current) {
-        await deleteChatHistory(currentChatId.current);
-        setChatHistory(prev => prev.filter(c => c.id !== currentChatId.current));
-        currentChatId.current = null;
-      }
-    } catch (error) {
-      console.error('Failed to delete messages:', error);
-    }
+    let cancelled = false;
+    setLoading(true);
     setMessages([]);
-  }, [messages]);
+    maxIdRef.current = 0;
+    minIdRef.current = 0;
 
-  const clearMessages = useCallback(() => {
-    setMessages([]);
-    currentChatId.current = null;
-  }, []);
-
-  const updateChatTitle = useCallback(async (chatId: string, title: string) => {
-    try {
-      const chat = chatHistory.find(c => c.id === chatId);
-      if (chat) {
-        const updatedChat = { ...chat, title };
-        await saveChatHistory(updatedChat);
-        setChatHistory(prev => prev.map(c => c.id === chatId ? updatedChat : c));
-      }
-    } catch (error) {
-      console.error('Failed to update chat title:', error);
-      setChatHistory(prev => prev.map(c => c.id === chatId ? { ...c, title } : c));
-    }
-  }, [chatHistory]);
-
-  const updateChatNote = useCallback(async (chatId: string, note: string) => {
-    try {
-      const chat = chatHistory.find(c => c.id === chatId);
-      if (chat) {
-        const updatedChat = { ...chat, note };
-        await saveChatHistory(updatedChat);
-        setChatHistory(prev => prev.map(c => c.id === chatId ? updatedChat : c));
-      }
-    } catch (error) {
-      console.error('Failed to update chat note:', error);
-      setChatHistory(prev => prev.map(c => c.id === chatId ? { ...c, note } : c));
-    }
-  }, [chatHistory]);
-
-  const togglePinChat = useCallback(async (chatId: string) => {
-    try {
-      const chat = chatHistory.find(c => c.id === chatId);
-      if (chat) {
-        const updatedChat = { ...chat, isPinned: !chat.isPinned };
-        await saveChatHistory(updatedChat);
-        setChatHistory(prev => {
-          const updated = prev.map(c => c.id === chatId ? updatedChat : c);
-          return updated.sort((a, b) => {
-            if (a.isPinned && !b.isPinned) return -1;
-            if (!a.isPinned && b.isPinned) return 1;
-            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-          });
-        });
-      }
-    } catch (error) {
-      console.error('Failed to toggle chat pin:', error);
-      setChatHistory(prev => {
-        const updated = prev.map(c => c.id === chatId ? { ...c, isPinned: !c.isPinned } : c);
-        return updated.sort((a, b) => {
-          if (a.isPinned && !b.isPinned) return -1;
-          if (!a.isPinned && b.isPinned) return 1;
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        });
-      });
-    }
-  }, [chatHistory]);
-
-  const searchChats = useCallback((query: string): SearchResult[] => {
-    if (!query.trim()) return [];
-    
-    const lowerQuery = query.toLowerCase();
-    const results: SearchResult[] = [];
-
-    chatHistory.forEach(chat => {
-      chat.messages.forEach(message => {
-        if (message.content.toLowerCase().includes(lowerQuery)) {
-          const startIndex = message.content.toLowerCase().indexOf(lowerQuery);
-          const previewStart = Math.max(0, startIndex - 20);
-          const previewEnd = Math.min(message.content.length, startIndex + lowerQuery.length + 20);
-          const preview = (previewStart > 0 ? '...' : '') + 
-            message.content.slice(previewStart, previewEnd) + 
-            (previewEnd < message.content.length ? '...' : '');
-
-          results.push({
-            chatId: chat.id,
-            chatTitle: chat.title,
-            messageId: message.id,
-            content: message.content,
-            preview,
-            timestamp: message.timestamp,
-          });
+    (async () => {
+      try {
+        const { messages: list, max_id } = await api.messagesList(
+          groupId,
+          0,
+          INITIAL_MSG_LIMIT,
+        );
+        if (cancelled || groupIdRef.current !== groupId) return;
+        setMessages(list);
+        maxIdRef.current = max_id;
+        if (list.length > 0) {
+          minIdRef.current = list[0].id;
+          // 拉满一页说明可能还有更早的历史
+          setHasMore(list.length >= INITIAL_MSG_LIMIT);
+        } else {
+          setHasMore(false);
         }
-      });
-    });
-
-    return results.sort((a, b) => 
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-  }, [chatHistory]);
-
-  const getChatsByDateRange = useCallback((startDate: Date, endDate: Date): ChatHistory[] => {
-    return chatHistory.filter(chat => {
-      const chatDate = new Date(chat.createdAt);
-      return chatDate >= startDate && chatDate <= endDate;
-    }).sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-  }, [chatHistory]);
-
-  const exportChatToWord = useCallback((chat: ChatHistory): string => {
-    let content = `聊天记录：${chat.title}\n`;
-    content += `创建时间：${formatTimestamp(chat.createdAt)}\n`;
-    if (chat.note) {
-      content += `备注：${chat.note}\n`;
-    }
-    content += '\n---\n\n';
-
-    const userMessages = chat.messages.filter(m => m.sender === 'user');
-    
-    userMessages.forEach((message, index) => {
-      content += `${index + 1}. ${message.content}\n`;
-      content += `   时间：${formatTimestamp(message.timestamp)}\n\n`;
-    });
-
-    return content;
-  }, []);
-
-  const exportChatsToWord = useCallback((chats: ChatHistory[]): string => {
-    let content = '树洞聊天记录汇总\n';
-    content += `导出时间：${formatTimestamp(new Date())}\n`;
-    content += `共 ${chats.length} 条记录\n\n`;
-    content += '='.repeat(50) + '\n\n';
-
-    chats.forEach((chat, chatIndex) => {
-      content += `${chatIndex + 1}. ${chat.title}\n`;
-      content += `创建时间：${formatTimestamp(chat.createdAt)}\n`;
-      if (chat.note) {
-        content += `备注：${chat.note}\n`;
+      } catch (e) {
+        console.warn('加载消息失败', e);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      
-      const userMessages = chat.messages.filter(m => m.sender === 'user');
-      content += `消息数：${userMessages.length}\n`;
-      content += '\n';
+    })();
 
-      userMessages.forEach((message, msgIndex) => {
-        content += `  ${msgIndex + 1}. ${message.content}\n`;
-        content += `     时间：${formatTimestamp(message.timestamp)}\n`;
-      });
+    return () => {
+      cancelled = true;
+    };
+  }, [groupId]);
 
-      content += '\n' + '-'.repeat(50) + '\n\n';
-    });
+  // 增量轮询（页面可见时）
+  useEffect(() => {
+    if (groupId === null) return;
 
-    return content;
-  }, []);
+    const poll = async () => {
+      if (document.hidden || groupIdRef.current !== groupId) return;
+      try {
+        const { messages: list, max_id } = await api.messagesList(
+          groupId,
+          maxIdRef.current,
+          100,
+        );
+        if (list.length > 0) {
+          mergeMessages(list);
+        } else {
+          maxIdRef.current = max_id;
+        }
+      } catch {
+        // 网络波动忽略，下个周期重试
+      }
+    };
+
+    pollTimerRef.current = setInterval(poll, POLL_INTERVAL);
+    const onVisible = () => {
+      if (!document.hidden) poll();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [groupId, mergeMessages]);
+
+  // 向上加载更早的历史
+  const loadMore = useCallback(async () => {
+    if (groupId === null || loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const { messages: older, has_more } = await api.messagesHistory(
+        groupId,
+        minIdRef.current,
+        HISTORY_LIMIT,
+      );
+      if (older.length > 0) {
+        minIdRef.current = older[0].id;
+        setMessages((prev) => {
+          const map = new Map<number, ChatMessage>();
+          older.forEach((m) => map.set(m.id, m));
+          prev.forEach((m) => {
+            if (!m.clientTempId) map.set(m.id, m);
+          });
+          const merged = Array.from(map.values()).sort((a, b) => a.id - b.id);
+          // 保留 temp 消息
+          const temps = prev.filter((m) => m.clientTempId);
+          return [...merged, ...temps];
+        });
+      }
+      setHasMore(has_more === 1);
+    } catch (e) {
+      console.warn('加载历史失败', e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [groupId, loadingMore, hasMore]);
+
+  // 发送文本
+  const sendText = useCallback(
+    async (content: string): Promise<void> => {
+      const gid = groupIdRef.current;
+      if (!gid || !currentUser || !content.trim()) return;
+      setSending(true);
+      const tempId = `t${Date.now()}${Math.random().toString(36).slice(2, 7)}`;
+      const temp: ChatMessage = {
+        id: -Date.now(),
+        group_id: gid,
+        user_id: currentUser.id,
+        nickname: currentUser.nickname,
+        color: currentUser.color,
+        type: 'text',
+        content: content.trim(),
+        file: null,
+        is_todo: 0,
+        deleted: 0,
+        created_at: nowText(),
+        status: 'sending',
+        clientTempId: tempId,
+      };
+      setMessages((prev) => [...prev, temp]);
+      try {
+        const { id, created_at } = await api.messagesSend({
+          group_id: gid,
+          type: 'text',
+          content: content.trim(),
+        });
+        if (id > maxIdRef.current) maxIdRef.current = id;
+        setMessages((prev) =>
+          prev
+            .map((m) =>
+              m.clientTempId === tempId
+                ? { ...m, id, created_at, status: undefined, clientTempId: undefined }
+                : m,
+            )
+        );
+      } catch (e) {
+        setMessages((prev) =>
+          prev.map((m) => (m.clientTempId === tempId ? { ...m, status: 'failed' } : m)),
+        );
+        throw e;
+      } finally {
+        setSending(false);
+      }
+    },
+    [currentUser],
+  );
+
+  // 发送图片/文件：先上传文件，再发消息
+  const sendFileMessage = useCallback(
+    async (file: File | Blob, filename: string, kind: 'image' | 'file'): Promise<void> => {
+      const gid = groupIdRef.current;
+      if (!gid || !currentUser) return;
+      setSending(true);
+      setUploadProgress(0);
+      const tempId = `t${Date.now()}${Math.random().toString(36).slice(2, 7)}`;
+      const temp: ChatMessage = {
+        id: -Date.now(),
+        group_id: gid,
+        user_id: currentUser.id,
+        nickname: currentUser.nickname,
+        color: currentUser.color,
+        type: kind,
+        content: kind === 'file' ? filename : '',
+        file: null,
+        is_todo: 0,
+        deleted: 0,
+        created_at: nowText(),
+        status: 'sending',
+        clientTempId: tempId,
+      };
+      setMessages((prev) => [...prev, temp]);
+      try {
+        const up = await api.upload(file, filename, (p) => setUploadProgress(p));
+        const { id, created_at } = await api.messagesSend({
+          group_id: gid,
+          type: kind,
+          content: kind === 'file' ? filename : '',
+          file_id: up.file_id,
+        });
+        if (id > maxIdRef.current) maxIdRef.current = id;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.clientTempId === tempId
+              ? {
+                  ...m,
+                  id,
+                  created_at,
+                  status: undefined,
+                  clientTempId: undefined,
+                  file: {
+                    id: up.file_id,
+                    url: up.url,
+                    name: up.name,
+                    mime: up.mime,
+                    size: up.size,
+                  },
+                }
+              : m,
+          ),
+        );
+      } catch (e) {
+        setMessages((prev) =>
+          prev.map((m) => (m.clientTempId === tempId ? { ...m, status: 'failed' } : m)),
+        );
+        throw e;
+      } finally {
+        setSending(false);
+        setUploadProgress(null);
+      }
+    },
+    [currentUser],
+  );
+
+  // 删除消息（软删除，本地立即更新，轮询会同步到其他设备）
+  const deleteMessage = useCallback(async (id: number) => {
+    const target = messages.find((m) => m.id === id);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === id ? { ...m, deleted: 1, content: '', file: null } : m,
+      ),
+    );
+    try {
+      await api.messagesDelete(id);
+    } catch (e) {
+      // 失败回滚
+      if (target) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === id ? target : m)),
+        );
+      }
+      throw e;
+    }
+  }, [messages]);
 
   return {
     messages,
-    chatHistory,
-    isTyping,
-    sendMessage,
-    saveCurrentChat,
-    loadChat,
-    deleteChat,
+    loading,
+    loadingMore,
+    hasMore,
+    sending,
+    uploadProgress,
+    loadMore,
+    sendText,
+    sendFileMessage,
     deleteMessage,
-    deleteMessageInChat,
-    deleteAllMessages,
-    clearMessages,
-    updateChatTitle,
-    updateChatNote,
-    togglePinChat,
-    searchChats,
-    getChatsByDateRange,
-    exportChatToWord,
-    exportChatsToWord,
-    formatTimestamp,
-    currentChatId,
   };
 };
+
+function realId(m: ChatMessage): number {
+  return m.id > 0 ? m.id : Number.MAX_SAFE_INTEGER;
+}
+
+function nowText(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}

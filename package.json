@@ -1,9 +1,9 @@
 {
-  "name": "tree-hole-chat",
+  "name": "smallChat",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://williamzlj.github.io/sudong",
+  "homepage": "https://williamzlj.github.io/smallChat",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -14,13 +14,9 @@
     "deploy:repo": "cross-env REPO_NAME=YOUR_REPO_NAME npm run build && gh-pages -d dist"
   },
   "dependencies": {
-    "i18next": "^26.3.0",
-    "i18next-browser-languagedetector": "^8.2.1",
-    "i18next-http-backend": "^4.0.0",
     "lucide-react": "^0.294.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-i18next": "^17.0.8"
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

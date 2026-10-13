@@ -1,203 +1,137 @@
 import { useState, useEffect, useCallback } from 'react';
-import { User, LoginCredentials, RegisterCredentials, UpdateProfileData, BotSettings } from '../types/auth';
-import { initDB, saveUser, getUserByEmail, updateUser, saveBotSettings, getBotSettings } from '../db/indexedDB';
+import { api, tokenStore, onUnauthorized } from '../api/client';
+import { User } from '../api/types';
+import { currentDeviceName } from '../config';
 
-const AUTH_STORAGE_KEY = 'tree-hole-auth';
-
-const generateId = (): string => {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
-};
-
-const hashPassword = (password: string): string => {
-  let hash = 0;
-  for (let i = 0; i < password.length; i++) {
-    const char = password.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return hash.toString(36);
-};
-
-const defaultBotSettings: BotSettings = {
-  name: '',
-  avatar: 'bg-green-500',
-  defaultReply: '',
-  productName: '',
-  productDescription: '',
-  chatHint: '',
-  chatBackgroundText: '',
-  fontSize: 16,
-};
+export interface AuthResult {
+  success: boolean;
+  message: string;
+}
 
 export const useAuth = () => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => tokenStore.getUser());
   const [isLoading, setIsLoading] = useState(true);
-  const [botSettings, setBotSettings] = useState<BotSettings>(defaultBotSettings);
 
+  // 启动时用 token 向服务器核验身份
   useEffect(() => {
+    let cancelled = false;
     const init = async () => {
+      const token = tokenStore.get();
+      if (!token) {
+        setIsLoading(false);
+        return;
+      }
       try {
-        await initDB();
-        
-        const savedAuth = localStorage.getItem(AUTH_STORAGE_KEY);
-        if (savedAuth) {
-          try {
-            const authData = JSON.parse(savedAuth);
-            if (authData.userId) {
-              const users = await getUserByEmail(authData.email);
-              if (users) {
-                setUser(users);
-                const settings = await getBotSettings(users.id);
-                setBotSettings(settings || defaultBotSettings);
-              }
-            }
-          } catch {
-            localStorage.removeItem(AUTH_STORAGE_KEY);
-          }
+        const { user: fresh } = await api.me();
+        if (!cancelled) {
+          setUser(fresh);
+          tokenStore.setUser(fresh);
         }
-      } catch (error) {
-        console.error('Failed to initialize database:', error);
+      } catch {
+        // 401 时 client 已清除 token；网络错误时保留本地登录态，允许离线查看
+        if (!cancelled && tokenStore.get() === null) {
+          setUser(null);
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
       }
-      setIsLoading(false);
     };
-
     init();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const login = useCallback(async (credentials: LoginCredentials): Promise<{ success: boolean; message: string }> => {
+  // 任意请求遇到 401 → 退出登录
+  useEffect(() => {
+    onUnauthorized(() => setUser(null));
+  }, []);
+
+  const login = useCallback(
+    async (username: string, password: string): Promise<AuthResult> => {
+      try {
+        const data = await api.login({
+          username,
+          password,
+          device_name: currentDeviceName(),
+        });
+        tokenStore.set(data.token);
+        tokenStore.setUser(data.user);
+        setUser(data.user);
+        return { success: true, message: '登录成功' };
+      } catch (e) {
+        return { success: false, message: e instanceof Error ? e.message : '登录失败' };
+      }
+    },
+    [],
+  );
+
+  const register = useCallback(
+    async (
+      username: string,
+      password: string,
+      inviteCode: string,
+      nickname?: string,
+    ): Promise<AuthResult> => {
+      try {
+        await api.register({ username, password, invite_code: inviteCode, nickname });
+        // 注册成功后自动登录
+        return login(username, password);
+      } catch (e) {
+        return { success: false, message: e instanceof Error ? e.message : '注册失败' };
+      }
+    },
+    [login],
+  );
+
+  const logout = useCallback(async () => {
     try {
-      const foundUser = await getUserByEmail(credentials.email);
-      
-      if (!foundUser) {
-        return { success: false, message: '系统中无该用户' };
-      }
-
-      if (!foundUser.isActive) {
-        return { success: false, message: '您的账户已被停用' };
-      }
-
-      if (hashPassword(credentials.password) !== foundUser.password) {
-        return { success: false, message: '密码错误' };
-      }
-
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ userId: foundUser.id, email: foundUser.email }));
-      setUser(foundUser);
-      const settings = await getBotSettings(foundUser.id);
-      setBotSettings(settings || defaultBotSettings);
-      return { success: true, message: '登录成功' };
-    } catch (error) {
-      console.error('Login error:', error);
-      return { success: false, message: '登录失败' };
+      await api.logout();
+    } catch {
+      // 即使接口失败也要清除本地状态
     }
-  }, []);
-
-  const register = useCallback(async (credentials: RegisterCredentials): Promise<{ success: boolean; message: string }> => {
-    try {
-      const existingUser = await getUserByEmail(credentials.email);
-      
-      if (existingUser) {
-        return { success: false, message: '该邮箱已被注册' };
-      }
-
-      const newUser: User = {
-        id: generateId(),
-        username: credentials.username,
-        email: credentials.email,
-        password: hashPassword(credentials.password),
-        avatar: 'bg-blue-500',
-        isActive: true,
-        isBanned: false,
-        role: 'user',
-        createdAt: new Date(),
-      };
-
-      await saveUser(newUser);
-      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ userId: newUser.id, email: newUser.email }));
-      setUser(newUser);
-      
-      await saveBotSettings(newUser.id, defaultBotSettings);
-      setBotSettings(defaultBotSettings);
-      
-      return { success: true, message: '注册成功' };
-    } catch (error) {
-      console.error('Register error:', error);
-      return { success: false, message: '注册失败' };
-    }
-  }, []);
-
-  const logout = useCallback(() => {
-    localStorage.removeItem(AUTH_STORAGE_KEY);
+    tokenStore.clear();
     setUser(null);
   }, []);
 
-  const updateProfile = useCallback(async (data: UpdateProfileData): Promise<{ success: boolean; message: string }> => {
-    if (!user) {
-      return { success: false, message: '请先登录' };
-    }
-
-    try {
-      const updates: Partial<User> = {};
-
-      if (data.username) updates.username = data.username;
-      if (data.email) updates.email = data.email;
-      if (data.avatar !== undefined) updates.avatar = data.avatar;
-      if (data.userNameColor !== undefined) updates.userNameColor = data.userNameColor;
-      
-      if (data.password) {
-        if (!data.currentPassword) {
-          return { success: false, message: '请输入当前密码' };
+  const updateProfile = useCallback(
+    async (data: {
+      nickname?: string;
+      color?: string;
+      oldPassword?: string;
+      newPassword?: string;
+    }): Promise<AuthResult> => {
+      try {
+        const payload: {
+          nickname?: string;
+          color?: string;
+          old_password?: string;
+          new_password?: string;
+        } = {};
+        if (data.nickname !== undefined) payload.nickname = data.nickname;
+        if (data.color !== undefined) payload.color = data.color;
+        if (data.newPassword) {
+          payload.old_password = data.oldPassword;
+          payload.new_password = data.newPassword;
         }
-        
-        if (hashPassword(data.currentPassword) !== user.password) {
-          return { success: false, message: '当前密码不正确' };
-        }
-        
-        updates.password = hashPassword(data.password);
+        const { user: fresh } = await api.updateProfile(payload);
+        setUser(fresh);
+        tokenStore.setUser(fresh);
+        return { success: true, message: '已保存' };
+      } catch (e) {
+        return { success: false, message: e instanceof Error ? e.message : '保存失败' };
       }
-
-      await updateUser(user.id, updates);
-      
-      const updatedUser = await getUserByEmail(user.email);
-      if (updatedUser) {
-        setUser(updatedUser);
-        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ userId: updatedUser.id, email: updatedUser.email }));
-      }
-
-      return { success: true, message: '更新成功' };
-    } catch (error) {
-      console.error('Update profile error:', error);
-      return { success: false, message: '更新失败' };
-    }
-  }, [user]);
-
-  const updateBotSettings = useCallback(async (settings: Partial<BotSettings>) => {
-    try {
-      const currentSettings = botSettings || defaultBotSettings;
-      const newSettings: BotSettings = {
-        ...defaultBotSettings,
-        ...currentSettings,
-        ...settings,
-      };
-      
-      if (user) {
-        await saveBotSettings(user.id, newSettings);
-      }
-      setBotSettings(newSettings);
-    } catch (error) {
-      console.error('Failed to update bot settings:', error);
-      throw error;
-    }
-  }, [user, botSettings]);
+    },
+    [],
+  );
 
   return {
     user,
     isLoading,
     isAuthenticated: !!user,
-    botSettings,
     login,
     register,
     logout,
     updateProfile,
-    updateBotSettings,
   };
 };

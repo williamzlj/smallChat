@@ -1,298 +1,226 @@
 import { useState, useRef, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Message } from '../types';
-import { ListTodo, Copy, Download } from 'lucide-react';
+import { Copy, Trash2, Download, FileText, AlertCircle, Clock, CheckCheck } from 'lucide-react';
+import { ChatMessage } from '../api/types';
+import { fileUrl } from '../config';
 
-interface MessageBubbleProps {
-  message: Message;
-  onDelete: (messageId: string) => void;
-  isDarkMode?: boolean;
-  formatTimestamp: (date: Date) => string;
-  onConvertToTodo?: (content: string) => void;
-  isSelected?: boolean;
-  onToggleSelect?: (messageId: string) => void;
-  showSelect?: boolean;
-  fontSize?: number;
+interface Props {
+  message: ChatMessage;
+  isSelf: boolean;
+  canDelete: boolean;
+  onDelete: (id: number) => Promise<void> | void;
+  isDarkMode: boolean;
+  fontSize: number;
 }
 
-export const MessageBubble = ({ message, onDelete, isDarkMode = false, formatTimestamp, onConvertToTodo, isSelected = false, onToggleSelect, showSelect = false, fontSize = 16 }: MessageBubbleProps) => {
-  const { t } = useTranslation();
+function shortTime(createdAt: string): string {
+  // 后端格式 Y-m-d H:i:s
+  return createdAt.length >= 16 ? createdAt.slice(11, 16) : createdAt;
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export const MessageBubble = ({ message, isSelf, canDelete, onDelete, isDarkMode, fontSize }: Props) => {
   const [showMenu, setShowMenu] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const isUser = message.sender === 'user';
-
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (showMenu && bubbleRef.current && menuRef.current) {
-        const rect = bubbleRef.current.getBoundingClientRect();
-        const isClickOnBubble = (
-          event.clientX >= rect.left &&
-          event.clientX <= rect.right &&
-          event.clientY >= rect.top &&
-          event.clientY <= rect.bottom
-        );
-        const isClickOnMenu = menuRef.current.contains(event.target as Node);
-        
-        if (!isClickOnBubble && !isClickOnMenu) {
-          setShowMenu(false);
-        }
+    if (!showMenu) return;
+    const onClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
       }
     };
-
-    if (showMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
+    const onScroll = () => setShowMenu(false);
+    document.addEventListener('mousedown', onClick);
+    window.addEventListener('scroll', onScroll, true);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('mousedown', onClick);
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [showMenu]);
 
-  const handleMouseDown = () => {
-    longPressTimer.current = setTimeout(() => {
-      if (bubbleRef.current) {
-        const rect = bubbleRef.current.getBoundingClientRect();
-        const menuHeight = 200;
-        const viewportHeight = window.innerHeight;
-        const bottomSpace = viewportHeight - rect.bottom;
-        
-        let y = rect.bottom + 8;
-        if (bottomSpace < menuHeight) {
-          y = rect.top - menuHeight - 8;
-        }
-        
-        const x = isUser ? rect.right - 160 : rect.left;
-        
-        setMenuPosition({ x, y });
-        setShowMenu(true);
-      }
-    }, 500);
+  const openMenu = () => {
+    if (!bubbleRef.current) return;
+    const rect = bubbleRef.current.getBoundingClientRect();
+    const menuW = 168;
+    const menuH = 130;
+    let x = isSelf ? rect.right - menuW : rect.left;
+    let y = rect.bottom + 6;
+    if (x < 8) x = 8;
+    if (x + menuW > window.innerWidth - 8) x = window.innerWidth - menuW - 8;
+    if (y + menuH > window.innerHeight - 8) y = rect.top - menuH - 6;
+    setMenuPos({ x, y });
+    setShowMenu(true);
   };
 
-  const handleMouseUp = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
+  const startPress = () => {
+    pressTimer.current = setTimeout(openMenu, 450);
+  };
+  const cancelPress = () => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+  };
+
+  const copyText = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+    } catch {
+      // 忽略
     }
-  };
-
-  const handleTouchStart = () => {
-    longPressTimer.current = setTimeout(() => {
-      if (bubbleRef.current) {
-        const rect = bubbleRef.current.getBoundingClientRect();
-        const menuHeight = 200;
-        const viewportHeight = window.innerHeight;
-        const bottomSpace = viewportHeight - rect.bottom;
-        
-        let y = rect.bottom + 8;
-        if (bottomSpace < menuHeight) {
-          y = rect.top - menuHeight - 8;
-        }
-        
-        const x = isUser ? rect.right - 160 : rect.left;
-        
-        setMenuPosition({ x, y });
-        setShowMenu(true);
-      }
-    }, 500);
-  };
-
-  const handleTouchEnd = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-    }
+    setShowMenu(false);
   };
 
   const handleDelete = () => {
-    onDelete(message.id);
     setShowMenu(false);
-  };
-
-  const handleConvertToTodo = () => {
-    if (onConvertToTodo) {
-      onConvertToTodo(message.content);
+    if (confirm('确定删除这条消息吗？删除后群内所有设备都会显示"已删除"。')) {
+      Promise.resolve(onDelete(message.id)).catch((e: unknown) =>
+        alert(e instanceof Error ? e.message : '删除失败'),
+      );
     }
-    setShowMenu(false);
   };
 
-  const handleCopy = async () => {
-    try {
-      if (message.content) {
-        await navigator.clipboard.writeText(message.content);
-      }
-    } catch (error) {
-      console.error('Failed to copy:', error);
-    }
-    setShowMenu(false);
+  const openFile = () => {
+    if (message.file) window.open(fileUrl(message.file.url), '_blank');
   };
 
-  const handleCopyWithTimestamp = async () => {
-    try {
-      if (message.content) {
-        const timestamp = formatTimestamp(message.timestamp);
-        const contentWithTimestamp = `${timestamp}\n${message.content}`;
-        await navigator.clipboard.writeText(contentWithTimestamp);
-      }
-    } catch (error) {
-      console.error('Failed to copy:', error);
-    }
-    setShowMenu(false);
-  };
-
-  const handleSaveImage = () => {
-    if (message.image) {
-      const link = document.createElement('a');
-      link.href = message.image;
-      link.download = `image_${Date.now()}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-    setShowMenu(false);
-  };
-
-  const handleCancel = () => {
-    setShowMenu(false);
-  };
+  if (message.deleted === 1) {
+    return (
+      <div className={`flex ${isSelf ? 'justify-end' : 'justify-start'} mb-3`}>
+        <div className="text-xs text-gray-400 italic px-3 py-1">该消息已删除</div>
+      </div>
+    );
+  }
 
   return (
     <>
-      <div
-        ref={bubbleRef}
-        className={`flex items-center ${isUser ? 'justify-end' : 'justify-start'} mb-3`}
-        onMouseDown={handleMouseDown}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
-      >
-        {showSelect && (
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={() => onToggleSelect && onToggleSelect(message.id)}
-            className="w-4 h-4 mr-2 cursor-pointer"
-            onClick={(e) => e.stopPropagation()}
-          />
-        )}
+      <div className={`flex ${isSelf ? 'justify-end' : 'justify-start'} mb-3`}>
         <div
-          className={`max-w-xs sm:max-w-md px-4 py-2 rounded-2xl cursor-pointer transition-transform active:scale-95 ${
-            isUser
-              ? 'bg-green-500 text-black rounded-br-md'
-              : isDarkMode
-              ? 'bg-gray-700 text-gray-200 rounded-bl-md'
-              : 'bg-white text-gray-800 rounded-bl-md shadow-sm'
-          } ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
+          ref={bubbleRef}
+          className={`max-w-[78%] sm:max-w-[70%] select-none ${isSelf ? 'items-end' : 'items-start'} flex flex-col`}
+          onMouseDown={startPress}
+          onMouseUp={cancelPress}
+          onMouseLeave={cancelPress}
+          onTouchStart={startPress}
+          onTouchEnd={cancelPress}
+          onTouchCancel={cancelPress}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            openMenu();
+          }}
         >
-          {message.image && (
-            <img
-              src={message.image}
-              alt={t('image')}
-              className="max-w-full h-auto rounded-lg mb-2"
-            />
+          {/* 昵称（非自己时显示） */}
+          {!isSelf && (
+            <span className="text-xs mb-1 px-1 font-medium" style={{ color: message.color }}>
+              {message.nickname}
+            </span>
           )}
-          {message.content && (
-            <p className="whitespace-pre-wrap" style={{ fontSize: `${fontSize}px` }}>{message.content}</p>
-          )}
-          <p
-            className={`mt-1 ${
-              isUser ? 'text-green-200 text-right' : 'text-gray-400'
-            }`}
-            style={{ fontSize: `${fontSize - 2}px` }}
+
+          <div
+            className={`relative px-3.5 py-2 rounded-2xl shadow-sm transition-opacity ${
+              isSelf
+                ? 'bg-green-500 text-white rounded-br-md'
+                : isDarkMode
+                  ? 'bg-gray-700 text-gray-100 rounded-bl-md'
+                  : 'bg-white text-gray-800 rounded-bl-md'
+            } ${message.status === 'sending' ? 'opacity-60' : ''} ${message.status === 'failed' ? 'ring-2 ring-red-400' : ''}`}
           >
-            {formatTimestamp(message.timestamp)}
-          </p>
+            {/* 文本 */}
+            {message.type === 'text' && message.content && (
+              <p className="whitespace-pre-wrap break-words" style={{ fontSize: `${fontSize}px`, lineHeight: 1.5 }}>
+                {message.content}
+              </p>
+            )}
+
+            {/* 图片 */}
+            {message.type === 'image' && message.file && (
+              <img
+                src={fileUrl(message.file.url)}
+                alt={message.file.name}
+                loading="lazy"
+                onClick={openFile}
+                className="max-w-full max-h-72 rounded-lg cursor-pointer object-cover"
+              />
+            )}
+
+            {/* 文件 */}
+            {message.type === 'file' && message.file && (
+              <button
+                onClick={openFile}
+                className={`flex items-center space-x-3 max-w-xs ${isSelf ? 'text-white' : isDarkMode ? 'text-gray-100' : 'text-gray-800'}`}
+              >
+                <span className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isSelf ? 'bg-green-600/60' : 'bg-green-100'}`}>
+                  <FileText className={`w-5 h-5 ${isSelf ? 'text-white' : 'text-green-600'}`} />
+                </span>
+                <span className="min-w-0 text-left">
+                  <span className="block text-sm font-medium truncate">{message.file.name}</span>
+                  <span className={`block text-xs ${isSelf ? 'text-green-100' : 'text-gray-400'}`}>
+                    {formatFileSize(message.file.size)}
+                  </span>
+                </span>
+                <Download className="w-4 h-4 flex-shrink-0 opacity-70" />
+              </button>
+            )}
+
+            {/* 时间 + 状态 */}
+            <div className={`flex items-center gap-1 mt-1 justify-end ${isSelf ? 'text-green-100' : 'text-gray-400'}`}>
+              {message.status === 'sending' && <Clock className="w-3 h-3" />}
+              {message.status === 'failed' && <AlertCircle className="w-3.5 h-3.5 text-red-300" />}
+              {!message.status && isSelf && <CheckCheck className="w-3 h-3 opacity-70" />}
+              <span style={{ fontSize: `${fontSize - 3}px` }}>{shortTime(message.created_at)}</span>
+            </div>
+          </div>
         </div>
       </div>
-      
+
       {showMenu && (
         <div
           ref={menuRef}
-          className={`fixed rounded-lg shadow-xl border p-2 z-50 min-w-[140px] ${
+          className={`fixed z-50 rounded-xl shadow-xl border py-1.5 min-w-[168px] ${
             isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
           }`}
-          style={{ 
-            left: menuPosition.x, 
-            top: menuPosition.y,
-            minHeight: '150px'
-          }}
-          onClick={(e) => e.stopPropagation()}
+          style={{ left: menuPos.x, top: menuPos.y }}
         >
-          <p className={`text-xs mb-2 border-b px-3 py-2 ${
-              isDarkMode ? 'text-gray-400 border-gray-600' : 'text-gray-500 border-gray-100'
-            }`}>{t('longPressActions')}</p>
-          
-          {message.content && (
-            <>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCopy();
-                }}
-                className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  isDarkMode ? 'text-blue-400 hover:bg-gray-600' : 'text-blue-600 hover:bg-blue-50'
-                }`}
-              >
-                <Copy className="w-4 h-4" />
-                <span>{t('copyMessage')}</span>
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleCopyWithTimestamp();
-                }}
-                className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  isDarkMode ? 'text-blue-400 hover:bg-gray-600' : 'text-blue-600 hover:bg-blue-50'
-                }`}
-              >
-                <Copy className="w-4 h-4" />
-                <span>{t('copyMessageWithTime')}</span>
-              </button>
-            </>
-          )}
-          
-          {message.image && (
+          <p className={`text-xs px-3 py-1.5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>消息操作</p>
+          {message.type === 'text' && message.content && (
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSaveImage();
+              onClick={copyText}
+              className={`w-full flex items-center space-x-2 px-3 py-2 text-sm ${
+                isDarkMode ? 'text-gray-200 hover:bg-gray-600' : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <Copy className="w-4 h-4" />
+              <span>复制文本</span>
+            </button>
+          )}
+          {(message.type === 'image' || message.type === 'file') && message.file && (
+            <button
+              onClick={() => {
+                setShowMenu(false);
+                openFile();
               }}
-              className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-                isDarkMode ? 'text-purple-400 hover:bg-gray-600' : 'text-purple-600 hover:bg-purple-50'
+              className={`w-full flex items-center space-x-2 px-3 py-2 text-sm ${
+                isDarkMode ? 'text-gray-200 hover:bg-gray-600' : 'text-gray-700 hover:bg-gray-100'
               }`}
             >
               <Download className="w-4 h-4" />
-              <span>{t('saveImage')}</span>
+              <span>{message.type === 'image' ? '查看大图' : '打开/下载文件'}</span>
             </button>
           )}
-          
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleConvertToTodo();
-            }}
-            className={`w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-sm transition-colors ${
-              isDarkMode ? 'text-green-400 hover:bg-gray-600' : 'text-green-600 hover:bg-green-50'
-            }`}
-          >
-            <ListTodo className="w-4 h-4" />
-            <span>{t('convertToTodo')}</span>
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDelete();
-            }}
-            className={`w-full text-red-500 px-3 py-2 rounded-lg text-sm transition-colors ${
-              isDarkMode ? 'hover:bg-gray-600' : 'hover:bg-red-50'
-            }`}
-          >
-            {t('deleteMessage')}
-          </button>
+          {canDelete && (
+            <button
+              onClick={handleDelete}
+              className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-gray-600"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>删除</span>
+            </button>
+          )}
         </div>
       )}
     </>

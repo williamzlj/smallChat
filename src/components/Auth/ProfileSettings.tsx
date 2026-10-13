@@ -1,620 +1,272 @@
-import { useState, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
-import { User as UserType, BotSettings } from '../../types/auth';
-import { Eye, EyeOff, UserIcon, Lock, Mail, Save, LogOut, X, Camera, Bot, Edit3, MessageSquare, Minus, Plus } from 'lucide-react';
-import { ImageManager } from './ImageManager';
+import { useState, useEffect } from 'react';
+import { X, LogOut, Minus, Plus, Monitor, Trash2, Check } from 'lucide-react';
+import { User, TokenInfo } from '../../api/types';
+import { api } from '../../api/client';
+import { AuthResult } from '../../hooks/useAuth';
 
-interface ProfileSettingsProps {
-  user: UserType;
-  botSettings: BotSettings;
-  onUpdate: (data: { username?: string; email?: string; password?: string; avatar?: string; currentPassword?: string }) => { success: boolean; message: string };
-  onUpdateBot: (settings: Partial<BotSettings>) => void;
+interface Props {
+  user: User;
+  fontSize: number;
+  onFontSizeChange: (size: number) => void;
+  onUpdate: (data: {
+    nickname?: string;
+    color?: string;
+    oldPassword?: string;
+    newPassword?: string;
+  }) => Promise<AuthResult>;
   onLogout: () => void;
   onClose: () => void;
 }
 
-const avatarColors = [
-  'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-orange-500', 
-  'bg-pink-500', 'bg-red-500', 'bg-cyan-500', 'bg-indigo-500'
+const COLORS = [
+  '#0FDC78', '#3B82F6', '#F59E0B', '#EC4899',
+  '#8B5CF6', '#14B8A6', '#F97316', '#EF4444',
 ];
 
-const userNameColors = [
-  { name: 'blue', value: 'text-blue-500', color: '#3b82f6' },
-  { name: 'green', value: 'text-green-500', color: '#22c55e' },
-  { name: 'purple', value: 'text-purple-500', color: '#a855f7' },
-  { name: 'orange', value: 'text-orange-500', color: '#f97316' },
-  { name: 'pink', value: 'text-pink-500', color: '#ec4899' },
-  { name: 'red', value: 'text-red-500', color: '#ef4444' },
-  { name: 'cyan', value: 'text-cyan-500', color: '#06b6d4' },
-  { name: 'indigo', value: 'text-indigo-500', color: '#6366f1' },
-  { name: 'black', value: 'text-black', color: '#000000' },
-  { name: 'darkGray', value: 'text-gray-600', color: '#4b5563' },
-];
-
-const colorNames: Record<string, Record<string, string>> = {
-  zh: { blue: '蓝色', green: '绿色', purple: '紫色', orange: '橙色', pink: '粉色', red: '红色', cyan: '青色', indigo: '靛蓝', black: '黑色', darkGray: '深灰色' },
-  en: { blue: 'Blue', green: 'Green', purple: 'Purple', orange: 'Orange', pink: 'Pink', red: 'Red', cyan: 'Cyan', indigo: 'Indigo', black: 'Black', darkGray: 'Dark Gray' },
-  ja: { blue: '青', green: '緑', purple: '紫', orange: 'オレンジ', pink: 'ピンク', red: '赤', cyan: 'シアン', indigo: '藍', black: '黒', darkGray: '濃い灰色' },
-  ko: { blue: '파랑', green: '초록', purple: '보라', orange: '주황', pink: '분홍', red: '빨강', cyan: '청록', indigo: '남색', black: '검정', darkGray: '짙은 회색' },
-};
-
-export const ProfileSettings = ({ user, botSettings, onUpdate, onUpdateBot, onLogout, onClose }: ProfileSettingsProps) => {
-  const { t, i18n } = useTranslation();
-  const currentLang = i18n.language || 'zh';
-  const [username, setUsername] = useState(user.username);
-  const [email, setEmail] = useState(user.email);
-  const [currentPassword, setCurrentPassword] = useState('');
+export const ProfileSettings = ({
+  user,
+  fontSize,
+  onFontSizeChange,
+  onUpdate,
+  onLogout,
+  onClose,
+}: Props) => {
+  const [nickname, setNickname] = useState(user.nickname);
+  const [color, setColor] = useState(user.color);
+  const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [confirmPwd, setConfirmPwd] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'profile' | 'bot' | 'images'>('profile');
-  const [botName, setBotName] = useState(botSettings.name || t('defaultBotName'));
-  const [selectedAvatar, setSelectedAvatar] = useState(user.avatar || 'bg-blue-500');
-  const [selectedBotAvatar, setSelectedBotAvatar] = useState(botSettings.avatar || 'bg-green-500');
-  const [botDefaultReply, setBotDefaultReply] = useState(botSettings.defaultReply || t('defaultBotReply'));
-  const [selectedUserNameColor, setSelectedUserNameColor] = useState(user.userNameColor || 'text-blue-500');
-  const [productName, setProductName] = useState(botSettings.productName || t('defaultBotName'));
-  const [productDescription, setProductDescription] = useState(botSettings.productDescription || t('defaultProductDescription'));
-  const [chatHint, setChatHint] = useState(botSettings.chatHint || t('defaultChatHint'));
-  const [chatBackgroundText, setChatBackgroundText] = useState(botSettings.chatBackgroundText || t('defaultChatBackgroundText'));
-  const [fontSize, setFontSize] = useState(botSettings.fontSize || 16);
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const botFileInputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [tokens, setTokens] = useState<TokenInfo[]>([]);
 
-  const handleSaveProfile = async () => {
+  useEffect(() => {
+    api
+      .tokensList()
+      .then(({ tokens: list }) => setTokens(list))
+      .catch(() => undefined);
+  }, []);
+
+  const profileChanged = nickname.trim() !== user.nickname || color !== user.color;
+
+  const saveProfile = async () => {
     setError('');
     setSuccess('');
-
-    setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 300));
-
-    const result = onUpdate({
-      username: username !== user.username ? username : undefined,
-      email: email !== user.email ? email : undefined,
-      avatar: selectedAvatar !== user.avatar ? selectedAvatar : undefined,
-      userNameColor: selectedUserNameColor !== user.userNameColor ? selectedUserNameColor : undefined,
-    });
-
-    if (result.success) {
-      setSuccess('个人资料已更新');
-    } else {
-      setError(result.message);
-    }
-    setIsLoading(false);
-  };
-
-  const handleChangePassword = async () => {
-    setError('');
-    setSuccess('');
-
-    if (!currentPassword) {
-      setError('请输入当前密码');
+    if (!nickname.trim()) {
+      setError('昵称不能为空');
       return;
     }
+    setBusy(true);
+    const r = await onUpdate({
+      nickname: nickname.trim() !== user.nickname ? nickname.trim() : undefined,
+      color: color !== user.color ? color : undefined,
+    });
+    setBusy(false);
+    if (r.success) setSuccess('资料已保存');
+    else setError(r.message);
+  };
 
-    if (newPassword !== confirmPassword) {
+  const changePassword = async () => {
+    setError('');
+    setSuccess('');
+    if (!oldPassword || !newPassword) {
+      setError('请填写原密码和新密码');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError('新密码至少 6 位');
+      return;
+    }
+    if (newPassword !== confirmPwd) {
       setError('两次输入的新密码不一致');
       return;
     }
-
-    if (newPassword.length < 6) {
-      setError('新密码长度至少需要6位');
-      return;
-    }
-
-    setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 300));
-
-    const result = onUpdate({
-      password: newPassword,
-      currentPassword,
-    });
-
-    if (result.success) {
-      setSuccess('密码已修改');
+    setBusy(true);
+    const r = await onUpdate({ oldPassword, newPassword });
+    setBusy(false);
+    if (r.success) {
+      setSuccess('密码已修改，其他设备已下线');
+      setOldPassword('');
       setNewPassword('');
-      setConfirmPassword('');
-      setCurrentPassword('');
+      setConfirmPwd('');
     } else {
-      setError(result.message);
+      setError(r.message);
     }
-    setIsLoading(false);
   };
 
-  const handleBotSettings = async () => {
-    setError('');
-    setSuccess('');
+  const revokeToken = async (token: string) => {
+    if (!confirm('确定让该设备下线吗？下次需要重新登录。')) return;
     try {
-      await onUpdateBot({ 
-        name: botName, 
-        avatar: selectedBotAvatar, 
-        defaultReply: botDefaultReply,
-        productName,
-        productDescription,
-        chatHint,
-        chatBackgroundText,
-        fontSize,
-      });
-      setSuccess('机器人设置已更新');
-    } catch (err) {
-      console.error('Failed to update bot settings:', err);
-      setError('保存失败，请重试');
+      await api.tokensRevoke(token);
+      setTokens((prev) => prev.filter((t) => t.token !== token));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '操作失败');
     }
   };
 
-  const resizeImage = (file: File, maxSize: number): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const img = new Image();
-          img.onload = () => {
-            try {
-              const canvas = document.createElement('canvas');
-              let width = img.width;
-              let height = img.height;
-              
-              if (width > height) {
-                if (width > maxSize) {
-                  height = (height * maxSize) / width;
-                  width = maxSize;
-                }
-              } else {
-                if (height > maxSize) {
-                  width = (width * maxSize) / height;
-                  height = maxSize;
-                }
-              }
-              
-              canvas.width = width;
-              canvas.height = height;
-              const ctx = canvas.getContext('2d');
-              if (ctx) {
-                ctx.drawImage(img, 0, 0, width, height);
-                const resizedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
-                resolve(resizedDataUrl);
-              } else {
-                reject(new Error('Failed to get canvas context'));
-              }
-            } catch (err) {
-              reject(err);
-            }
-          };
-          img.onerror = () => reject(new Error('Failed to load image'));
-          img.src = event.target?.result as string;
-        } catch (err) {
-          reject(err);
-        }
-      };
-      reader.onerror = () => reject(new Error('Failed to read file'));
-      reader.readAsDataURL(file);
-    });
+  const handleLogout = () => {
+    if (!confirm('确定退出登录吗？')) return;
+    onLogout();
   };
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const resizedImage = await resizeImage(file, 128);
-      setSelectedAvatar(resizedImage);
-    }
-  };
-
-  const handleBotAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      try {
-        const resizedImage = await resizeImage(file, 128);
-        setSelectedBotAvatar(resizedImage);
-      } catch (error) {
-        console.error('Failed to resize image:', error);
-        setError('头像处理失败，请重试');
-      }
-    }
-  };
+  const inputCls =
+    'w-full px-4 py-2.5 text-base border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-green-500';
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-gray-100">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
           <div>
-            <h2 className="text-xl font-bold text-gray-800">{t('settings')}</h2>
-            <p className="text-sm text-gray-500">{t('manageAccount')}</p>
+            <h2 className="text-lg font-bold text-gray-800 dark:text-white">设置</h2>
+            <p className="text-xs text-gray-400 mt-0.5">@{user.username}</p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="flex border-b border-gray-100">
-          <button
-            onClick={() => setActiveTab('profile')}
-            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'profile' ? 'text-green-600 border-b-2 border-green-600 bg-green-50' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {t('accountSettings')}
-          </button>
-          <button
-            onClick={() => setActiveTab('bot')}
-            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'bot' ? 'text-green-600 border-b-2 border-green-600 bg-green-50' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {t('botSettings')}
-          </button>
-          <button
-            onClick={() => setActiveTab('images')}
-            className={`flex-1 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'images' ? 'text-green-600 border-b-2 border-green-600 bg-green-50' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {t('imageManager')}
-          </button>
-        </div>
-
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
-          {activeTab === 'profile' ? (
-            <div className="space-y-6">
-              <div className="flex flex-col items-center">
-                <div className="relative">
-                  <div className={`w-20 h-20 ${selectedAvatar.startsWith('data:') ? 'bg-gray-200' : selectedAvatar} rounded-full flex items-center justify-center shadow-lg overflow-hidden`}>
-                    {selectedAvatar.startsWith('data:') ? (
-                      <img src={selectedAvatar} alt="Avatar" className="w-full h-full object-cover" />
-                    ) : (
-                      <UserIcon className="w-10 h-10 text-white" />
-                    )}
-                  </div>
+        <div className="p-5 overflow-y-auto space-y-6">
+          {/* 资料 */}
+          <section className="space-y-4">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">个人资料</h3>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">昵称</label>
+              <input
+                type="text"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                maxLength={20}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">名字颜色</label>
+              <div className="flex flex-wrap gap-2">
+                {COLORS.map((c) => (
                   <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute -bottom-1 -right-1 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center shadow-lg hover:bg-green-600 transition-colors"
+                    key={c}
+                    onClick={() => setColor(c)}
+                    className={`w-9 h-9 rounded-full transition-transform ${
+                      color === c ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : 'hover:scale-110'
+                    }`}
+                    style={{ backgroundColor: c }}
+                    title={c}
                   >
-                    <Camera className="w-4 h-4 text-white" />
+                    {color === c && <Check className="w-4 h-4 text-white mx-auto" />}
                   </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatarUpload}
-                    className="hidden"
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-2">{t('clickToChangeAvatar')}</p>
-                
-                <div className="flex space-x-2 mt-3">
-                  {avatarColors.map(color => (
-                    <button
-                      key={color}
-                      type="button"
-                      onClick={() => setSelectedAvatar(color)}
-                      className={`w-8 h-8 rounded-full transition-transform ${
-                        selectedAvatar === color ? 'ring-2 ring-green-500 ring-offset-2 scale-110' : 'hover:scale-110'
-                      } ${color}`}
-                    />
-                  ))}
-                </div>
+                ))}
               </div>
+            </div>
+            <button
+              onClick={saveProfile}
+              disabled={busy || !profileChanged}
+              className="w-full py-2.5 rounded-xl text-sm font-medium bg-green-500 text-white hover:bg-green-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              保存资料
+            </button>
+          </section>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('username')}</label>
-                <div className="relative">
-                  <UserIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={e => setUsername(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('userNameColor')}</label>
-                <div className="flex flex-wrap gap-2">
-                  {userNameColors.map((color) => (
-                    <button
-                      key={color.value}
-                      type="button"
-                      onClick={() => setSelectedUserNameColor(color.value)}
-                      className={`flex items-center space-x-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                        selectedUserNameColor === color.value
-                          ? 'ring-2 ring-green-500 ring-offset-2 bg-gray-100'
-                          : 'hover:bg-gray-50'
-                      }`}
-                      style={{ color: color.color }}
-                    >
-                      <span
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: color.color }}
-                      />
-                      <span>{colorNames[currentLang][color.name] || color.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('email')}</label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                    required
-                  />
-                </div>
-              </div>
-
+          {/* 字号 */}
+          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">消息字号</h3>
+            <div className="flex items-center space-x-3">
               <button
-            onClick={handleSaveProfile}
-            disabled={isLoading}
-            className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-3 rounded-xl font-medium hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
-          >
-            <Save className="w-4 h-4" />
-            <span>{isLoading ? t('loading') : t('saveProfile')}</span>
-          </button>
+                onClick={() => onFontSizeChange(Math.max(14, fontSize - 1))}
+                className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
+              >
+                <Minus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+              <div className="flex-1 bg-gray-50 dark:bg-gray-700/60 rounded-lg px-4 py-2.5 text-center text-base font-medium text-gray-800 dark:text-gray-200">
+                {fontSize}px
+              </div>
+              <button
+                onClick={() => onFontSizeChange(Math.min(24, fontSize + 1))}
+                className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
+              >
+                <Plus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-400">范围 14px - 24px，仅保存在本设备</p>
+          </section>
 
-              <div className="border-t border-gray-100 pt-5">
-                <p className="text-sm font-medium text-gray-700 mb-4">{t('changePassword')}</p>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-2">{t('password')}</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={currentPassword}
-                      onChange={e => setCurrentPassword(e.target.value)}
-                      placeholder={t('enterCurrentPassword')}
-                      className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                    />
-                  </div>
-                </div>
+          {/* 改密码 */}
+          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">修改密码</h3>
+            <input
+              type="password"
+              value={oldPassword}
+              onChange={(e) => setOldPassword(e.target.value)}
+              placeholder="原密码"
+              className={inputCls}
+            />
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="新密码（至少 6 位）"
+              className={inputCls}
+            />
+            <input
+              type="password"
+              value={confirmPwd}
+              onChange={(e) => setConfirmPwd(e.target.value)}
+              placeholder="确认新密码"
+              className={inputCls}
+            />
+            <button
+              onClick={changePassword}
+              disabled={busy}
+              className="w-full py-2.5 rounded-xl text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors disabled:opacity-50"
+            >
+              修改密码
+            </button>
+          </section>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-2">{t('newPassword')}</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={newPassword}
-                      onChange={e => setNewPassword(e.target.value)}
-                      placeholder={t('newPasswordMinLength')}
-                      className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-600 mb-2">{t('confirmPassword')}</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={confirmPassword}
-                      onChange={e => setConfirmPassword(e.target.value)}
-                      placeholder={t('reEnterNewPassword')}
-                      className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleChangePassword}
-                  disabled={isLoading}
-                  className="w-full mt-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 rounded-xl font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+          {/* 设备管理 */}
+          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">登录设备</h3>
+            <div className="space-y-2">
+              {tokens.map((t) => (
+                <div
+                  key={t.token}
+                  className="flex items-center space-x-3 px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-700/40"
                 >
-                  <Save className="w-4 h-4" />
-                  <span>{isLoading ? t('loading') : t('changePassword')}</span>
-                </button>
-              </div>
-
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-2 rounded-lg text-sm">
-                  {error}
-                </div>
-              )}
-
-              {success && (
-                <div className="bg-green-50 border border-green-200 text-green-600 px-4 py-2 rounded-lg text-sm">
-                  {success}
-                </div>
-              )}
-
-              <button
-                onClick={onLogout}
-                className="w-full bg-gray-100 text-red-600 py-3 rounded-xl font-medium hover:bg-gray-200 transition-colors flex items-center justify-center space-x-2"
-              >
-                <LogOut className="w-4 h-4" />
-                <span>{t('logout')}</span>
-              </button>
-            </div>
-          ) : activeTab === 'bot' ? (
-            <div className="space-y-5">
-              <div className="flex flex-col items-center">
-                <div className="relative">
-                  <div className={`w-20 h-20 ${selectedBotAvatar.startsWith('data:') ? 'bg-gray-200' : selectedBotAvatar} rounded-full flex items-center justify-center shadow-lg overflow-hidden`}>
-                    {selectedBotAvatar.startsWith('data:') ? (
-                      <img src={selectedBotAvatar} alt="Bot Avatar" className="w-full h-full object-cover" />
-                    ) : (
-                      <Bot className="w-10 h-10 text-white" />
-                    )}
+                  <Monitor className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800 dark:text-gray-200 truncate">
+                      {t.device_name || '未知设备'}
+                      {t.is_current === 1 && <span className="ml-2 text-xs text-green-600">（本设备）</span>}
+                    </p>
+                    <p className="text-xs text-gray-400">有效期至 {t.expires_at}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => botFileInputRef.current?.click()}
-                    className="absolute -bottom-1 -right-1 w-8 h-8 bg-green-500 rounded-full flex items-center justify-center shadow-lg hover:bg-green-600 transition-colors"
-                  >
-                    <Camera className="w-4 h-4 text-white" />
-                  </button>
-                  <input
-                    ref={botFileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleBotAvatarUpload}
-                    className="hidden"
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-2">{t('clickToChangeBotAvatar')}</p>
-                
-                <div className="flex space-x-2 mt-3">
-                  {avatarColors.map(color => (
+                  {t.is_current !== 1 && (
                     <button
-                      key={color}
-                      type="button"
-                      onClick={() => setSelectedBotAvatar(color)}
-                      className={`w-8 h-8 rounded-full transition-transform ${
-                        selectedBotAvatar === color ? 'ring-2 ring-green-500 ring-offset-2 scale-110' : 'hover:scale-110'
-                      } ${color}`}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('botName')}</label>
-                <div className="relative">
-                  <Edit3 className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type="text"
-                    value={botName}
-                    onChange={e => setBotName(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                    placeholder={t('botName')}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('defaultReply')}</label>
-                <div className="relative">
-                  <MessageSquare className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                  <input
-                    type="text"
-                    value={botDefaultReply}
-                    onChange={e => setBotDefaultReply(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                    placeholder={t('defaultReply')}
-                  />
-                </div>
-              </div>
-
-              <div className="border-t border-gray-100 pt-5">
-                <p className="text-sm font-medium text-gray-700 mb-4">{t('productSettings')}</p>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('productName')}</label>
-                  <div className="relative">
-                    <Edit3 className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                      type="text"
-                      value={productName}
-                      onChange={e => setProductName(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                      placeholder={t('productName')}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('productDescription')}</label>
-                  <div className="relative">
-                    <MessageSquare className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                      type="text"
-                      value={productDescription}
-                      onChange={e => setProductDescription(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                      placeholder={t('productDescription')}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('chatHint')}</label>
-                  <div className="relative">
-                    <MessageSquare className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                      type="text"
-                      value={chatHint}
-                      onChange={e => setChatHint(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                      placeholder={t('chatHint')}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('chatBackgroundText')}</label>
-                  <div className="relative">
-                    <MessageSquare className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                      type="text"
-                      value={chatBackgroundText}
-                      onChange={e => setChatBackgroundText(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-transparent outline-none transition-all"
-                      placeholder={t('chatBackgroundText')}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('fontSize')}</label>
-                  <div className="flex items-center space-x-3">
-                    <button
-                      onClick={() => setFontSize(Math.max(12, fontSize - 1))}
-                      className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center justify-center transition-colors"
+                      onClick={() => revokeToken(t.token)}
+                      className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600"
+                      title="让该设备下线"
                     >
-                      <Minus className="w-5 h-5 text-gray-600" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
-                    <div className="flex-1 bg-gray-50 rounded-lg px-4 py-3 text-center text-lg font-medium text-gray-800">
-                      {fontSize}px
-                    </div>
-                    <button
-                      onClick={() => setFontSize(Math.min(32, fontSize + 1))}
-                      className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-lg flex items-center justify-center transition-colors"
-                    >
-                      <Plus className="w-5 h-5 text-gray-600" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">{t('range')}：12px - 32px</p>
+                  )}
                 </div>
-              </div>
-
-              {success && (
-                <div className="bg-green-50 border border-green-200 text-green-600 px-4 py-2 rounded-lg text-sm">
-                  {success}
-                </div>
-              )}
-
-              <button
-                onClick={handleBotSettings}
-                className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 rounded-xl font-medium hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-md hover:shadow-lg flex items-center justify-center space-x-2"
-              >
-                <Save className="w-4 h-4" />
-                <span>{t('saveBotSettings')}</span>
-              </button>
+              ))}
             </div>
-          ) : activeTab === 'images' ? (
-            <ImageManager userId={user.id} isDarkMode={false} />
-          ) : null}
+          </section>
+
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          {success && <p className="text-sm text-green-600">{success}</p>}
+
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center space-x-2 py-2.5 rounded-xl text-sm font-medium bg-gray-100 dark:bg-gray-700 text-red-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>退出登录</span>
+          </button>
         </div>
       </div>
     </div>

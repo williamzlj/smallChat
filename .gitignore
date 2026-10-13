@@ -34,3 +34,9 @@ dist-ssr
 
 # gh-pages cache
 .gh-pages
+
+# Project handoff/secrets (never commit)
+handoff.txt
+handoff.md
+*.secret
+.env

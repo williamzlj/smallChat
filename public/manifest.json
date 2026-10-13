@@ -1,11 +1,11 @@
 {
-  "name": "树洞聊天",
-  "short_name": "树洞",
-  "description": "倾诉你的心声",
+  "name": "smallChat",
+  "short_name": "smallChat",
+  "description": "多设备信息同步工具",
   "theme_color": "#22c55e",
   "background_color": "#ffffff",
   "display": "standalone",
-  "start_url": "/",
+  "start_url": "./",
   "icons": [
     {
       "src": "pwa-192x192.png",
