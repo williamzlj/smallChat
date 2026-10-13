@@ -1,0 +1,415 @@
+================================================================================
+                     Sudong（树洞）核心技术实现文档
+================================================================================
+
+版本：v0.0.0
+仓库：https://github.com/williamzlj/sudong
+
+================================================================================
+一、技术栈
+================================================================================
+
+┌──────────────────┬──────────────────────────────┐
+│ 技术             │ 版本 / 库                     │
+├──────────────────┼──────────────────────────────┤
+│ 前端框架          │ React 18.2.0                  │
+│ 语言             │ TypeScript 5.3.3              │
+│ 构建工具          │ Vite 5.0.8                    │
+│ CSS 框架          │ TailwindCSS 3.4.0             │
+│ 图标             │ Lucide React 0.294.0           │
+│ 国际化            │ i18next 26.3.0                │
+│ React 国际化绑定  │ react-i18next 17.0.8          │
+│ 浏览器语言检测     │ i18next-browser-languagedetector │
+│ 数据存储           │ 浏览器 IndexedDB              │
+│ PWA               │ vite-plugin-pwa 1.3.0         │
+│ Service Worker   │ Workbox 7.4.1                  │
+│ 部署              │ gh-pages 6.3.0                │
+│ 服务端（备选）     │ sqlite3 + sqlite（Node.js）    │
+└──────────────────┴──────────────────────────────┘
+
+================================================================================
+二、应用入口与初始化
+================================================================================
+
+文件：src/main.tsx
+
+流程：
+1. ReactDOM.createRoot 挂载到 #root
+2. 包裹 <App /> 组件
+3. 导入全局样式 index.css（TailwindCSS 指令）
+
+文件：src/App.tsx
+
+核心状态：
+- activeTab：当前标签页（chat | history | todo）
+- isAuthenticated：认证状态（来自 useAuth）
+- user：当前用户对象
+- messages：当前消息列表（来自 useChat）
+- chatHistory：全部聊天记录
+- isDarkMode：暗色模式开关
+
+初始化流程：
+1. useAuth() → 尝试从 localStorage 恢复登录态 → 从 IndexedDB 加载用户数据
+2. useChat() → 加载当前用户的聊天历史
+3. useTodo() → 加载当前用户的待办事项
+4. 检测移动端 → 设置 isMobile、隐藏侧边栏
+5. 计算安全区域 → 适配 iPhone 底部
+
+未登录时渲染 Login / Register，已登录后渲染主界面。
+
+================================================================================
+三、数据库层实现（IndexedDB）
+================================================================================
+
+文件：src/db/indexedDB.ts
+
+---- 3.1 数据库初始化 ----
+initDB()：
+- 返回 Promise<IDBDatabase>
+- 打开 TreeHoleDB，版本号 4
+- onupgradeneeded：创建 6 个 Object Store + 索引
+- 版本迁移：v4 为 bot_settings 添加 fontSize 默认值
+
+---- 3.2 ID 生成算法 ----
+所有实体使用相同算法：
+  Date.now().toString(36) + Math.random().toString(36).substr(2)
+生成形如 "lj8k2a3b4c5" 的唯一 ID
+
+---- 3.3 用户操作 ----
+saveUser(user)        → users.put()
+getUserByEmail(email) → users.index('email').get()
+getAllUsers()         → users.getAll()
+updateUser(user)      → users.put()
+deleteUser(id)        → users.delete()
+
+---- 3.4 机器人设置操作 ----
+saveBotSettings(settings)  → bot_settings.put()
+getBotSettings(userId)     → bot_settings.get()
+
+---- 3.5 聊天记录操作 ----
+saveChatHistory(chat)           → chat_history.put()
+getChatHistoryByUserId(userId)  → chat_history.index('userId').getAll()
+deleteChatHistory(id)           → chat_history.delete()
+updateChatNote(id, note)        → get → update → put
+togglePinChat(id, isPinned)     → get → update → put
+updateChatTitle(id, title)      → get → update → put
+
+---- 3.6 消息操作 ----
+saveMessage(msg)              → messages.put()
+getMessagesByChatId(chatId)   → messages.index('chatId').getAll()
+deleteMessage(id)             → messages.delete()
+deleteMessagesByChatId(chatId)→ 游标遍历删除
+
+---- 3.7 待办事项操作 ----
+saveTodo(todo)                → todos.put()
+getTodosByUserId(userId)      → todos.index('userId').getAll()
+deleteTodo(id)                → todos.delete()
+
+---- 3.8 数据导出/导入 ----
+exportDatabase(userId):
+- 导出当前用户的所有数据为 JSON 字符串
+- 包含：user, bot_settings, chat_history + messages, todos
+
+importDatabase(jsonStr):
+- 解析 JSON
+- 逐条写入 IndexedDB
+- 写入完成后刷新页面（window.location.reload()）
+
+================================================================================
+四、认证模块实现（useAuth）
+================================================================================
+
+文件：src/hooks/useAuth.ts
+
+---- 4.1 密码哈希 ----
+hashPassword(password):
+- 使用简单 djb2 哈希算法
+- 将哈希转为 36 进制字符串存储
+- 注意：非加密级别，仅用于非明文存储
+
+---- 4.2 登录流程 ----
+login({ email, password }):
+1. 哈希输入密码
+2. 从 IndexedDB 查询 email 对应用户
+3. 比对密码哈希
+4. 检查 isActive / isBanned 状态
+5. 保存到 localStorage（可选"记住我"）
+6. 加载机器人设置
+7. 返回用户对象
+
+---- 4.3 注册流程 ----
+register({ username, email, password }):
+1. 检查邮箱是否已注册
+2. 哈希密码
+3. 创建 User 对象
+4. 保存到 IndexedDB
+5. 创建默认机器人设置
+6. 返回用户对象
+
+---- 4.4 会话持久化 ----
+- localStorage key: 'tree-hole-auth'
+- 存储：{ userId, email }
+- 应用启动时从 localStorage 恢复登录态
+
+---- 4.5 机器人设置更新 ----
+updateBotSettings(settings):
+1. 更新 useAuth 中的 botSettings state
+2. 同步保存到 IndexedDB（bot_settings store）
+3. 通过 chatBackgroundText → App.tsx 更新聊天界面背景文字
+4. 当 language 变化时，重新设置默认值（仅对空值填充）
+
+================================================================================
+五、聊天模块实现（useChat）
+================================================================================
+
+文件：src/hooks/useChat.ts
+
+---- 5.1 消息发送流程 ----
+sendMessage(content, image?):
+1. 创建 userMessage（sender: 'user', timestamp: new Date()）
+2. 将 userMessage 加入 messages 数组
+3. 自动保存聊天记录
+4. 设置 isTyping = true
+5. setTimeout 500ms 后：
+   a. 创建 botMessage（sender: 'bot', content: 默认回复）
+   b. 加入 messages 数组
+   c. isTyping = false
+   d. 再次保存聊天记录
+
+---- 5.2 自动保存机制 ----
+autoSave(messages, chatHistory, currentChatId):
+- 规则1：如果是最新消息的用户消息（前一条是 bot），更新已有聊天记录
+- 规则2：如果是第一轮对话，创建新聊天记录
+- 规则3：如果是加载历史后的新对话，追加到已有记录
+
+标题自动生成规则：
+- 取第一条用户消息前 30 字符作为标题
+- 超出截断加 ...
+- 无用户消息时使用 "无标题对话"
+
+---- 5.3 聊天记录加载 ----
+loadChat(chat):
+1. 加载该聊天的所有消息到 messages 状态
+2. 设置 currentChatId
+3. 标记 isFromHistory = true
+
+---- 5.4 搜索实现 ----
+searchChats(query):
+1. 将 query 转为小写
+2. 遍历所有聊天记录的每一条消息
+3. 匹配消息内容 + 聊天备注
+4. 生成预览片段（匹配位置前后 20 字符）
+5. 按时间倒序排列结果
+6. 返回 SearchResult[]
+
+---- 5.5 导出实现 ----
+exportChatToWord(chat)：
+- 生成格式化的 TXT 文本：
+  聊天记录：{title}
+  创建时间：{createdAt}
+  消息数：{count}
+  ---
+  用户 [时间戳]
+  消息内容
+  bot [时间戳]
+  消息内容
+
+exportChatsToWord(chats)：
+- 多聊天记录批量导出
+- 标题改为"聊天记录汇总"
+
+---- 5.6 Date Range 筛选 ----
+getChatsByDateRange(startDate, endDate):
+- 过滤 createdAt 在 [startDate, endDate] 范围内的记录
+- 用于导出时按日期范围筛选
+
+================================================================================
+六、待办事项模块实现（useTodo）
+================================================================================
+
+文件：src/hooks/useTodo.ts
+
+---- 6.1 核心状态 ----
+todos: Todo[] → 所有待办事项
+
+派生状态：
+- pendingTodos：status === 'pending' 且按 isPinned 排序
+- completedTodos：status === 'completed'
+- referenceTodos：status === 'reference'
+
+---- 6.2 CRUD 操作 ----
+addTodo(title, note, deadline):
+- 创建 Todo 对象，status: 'pending'
+
+updateTodo(id, title, note):
+- 查找并更新标题和内容
+
+deleteTodo(id):
+- 从 state 移除，异步删除 IndexedDB
+
+setStatus(id, status):
+- 切换待办状态（pending/completed/reference）
+
+togglePin(id):
+- 切换 pin 状态
+
+---- 6.3 消息转待办 ----
+createFromMessage(content):
+- 取消息前 50 字符作为标题
+- 消息全文作为内容
+- deadline 设为当天 23:59
+- 自动切换到 todo tab
+
+---- 6.4 排序 ----
+- 默认：置顶项在前，创建时间倒序
+- 支持升序/降序切换
+- 使用冒泡排序（简单实现，因数据量小）
+
+================================================================================
+七、PWA 实现
+================================================================================
+
+文件：vite.config.ts
+
+---- 7.1 配置项 ----
+VitePWA 插件配置：
+- registerType: 'autoUpdate' → Service Worker 自动更新
+- includeAssets → 预缓存 PWA 图标和清单文件
+- manifest → 应用名称、图标、主题色、display: standalone
+- workbox.globPatterns → 预缓存 JS/CSS/HTML/图片/字体
+- workbox.runtimeCaching → 图片资源 CacheFirst 策略
+
+---- 7.2 缓存策略 ----
+1. 静态资源（预缓存）：Install 时缓存
+2. 图片（运行时缓存）：CacheFirst，30 天过期，最多 100 张
+3. 其他请求：NetworkFirst（Workbox 默认）
+
+---- 7.3 离线支持 ----
+- 所有静态资源预缓存，首页可离线访问
+- 图片首次加载后缓存，后续离线可用
+- 应用数据依赖 IndexedDB（本地存储，本身离线可用）
+
+================================================================================
+八、多语言实现
+================================================================================
+
+文件：src/i18n/index.ts
+
+---- 8.1 初始化配置 ----
+i18n.use(LanguageDetector)      // 自动检测浏览器语言
+    .use(initReactI18next)      // React 集成
+    .init({
+      fallbackLng: 'zh',        // 默认中文
+      supportedLngs: ['zh', 'en', 'ja', 'ko'],
+      interpolation: { escapeValue: false }  // React 自带 XSS 防护
+    })
+
+---- 8.2 语言检测顺序 ----
+1. localStorage 中保存的语言选择
+2. 浏览器 navigator.language
+3. fallbackLng: 'zh'
+
+---- 8.3 使用方式 ----
+组件中：
+  const { t } = useTranslation();
+  <p>{t('welcome')}</p>           // 简单文本
+  <p>{t('chatWithBot', { name: botName })}</p>  // 带参数
+
+---- 8.4 动态标题 ----
+App.tsx 中监听 language 变化，动态设置 document.title：
+  useEffect(() => {
+    document.title = t('appTitle');
+  }, [t, i18n.language]);
+
+================================================================================
+九、消息长按菜单实现
+================================================================================
+
+文件：src/components/MessageBubble.tsx
+
+---- 9.1 多端支持 ----
+移动端：touchstart → setTimeout 500ms → 触发长按
+桌面端：mousedown → setTimeout 500ms → 触发长按
+取消：touchend/mouseup 时清除计时器
+
+---- 9.2 菜单位置 ----
+获取 bubbleRef 的 getBoundingClientRect()，在消息气泡上方居中定位弹出菜单。
+
+---- 9.3 菜单项 ----
+- 复制消息
+- 复制消息（带时间）
+- 保存图片（仅图片消息显示）
+- 删除消息
+- 添加到待办（调用 onConvertToTodo 回调）
+
+---- 9.4 关闭逻辑 ----
+点击菜单外部区域 → 关闭菜单
+点击菜单项 → 执行操作 → 关闭菜单
+
+================================================================================
+十、聊天记录界面关键实现
+================================================================================
+
+文件：src/components/ChatHistory.tsx
+
+---- 10.1 分页 ----
+- itemsPerPage: 10
+- totalPages = Math.ceil(filteredHistory.length / itemsPerPage)
+- currentPageData = filteredHistory.slice(startIndex, endIndex)
+
+---- 10.2 搜索 + 日期筛选 ----
+filteredHistory:
+1. 按 searchQuery 过滤（匹配消息内容 + 备注）
+2. 按 startDate/endDate 过滤
+3. 排序：置顶优先 → 时间倒序
+
+---- 10.3 批量操作 ----
+selectedChatIds: string[]
+- handleSelectChat(id)：单个切换选择
+- handleSelectAll()：全选/取消全选当前页
+- handleBatchDelete()：批量删除选中的聊天记录
+
+---- 10.4 置顶功能 ----
+togglePinChat(id, isPinned):
+- 调用 useChat.updateChatNote 更新 IndexedDB
+- 排序时 pinned 记录优先显示
+
+================================================================================
+十一、性能与安全注意事项
+================================================================================
+
+---- 11.1 性能 ----
+- 使用 useRef 避免不必要的重渲染（defaultReplyRef, chatHistoryRef, userIdRef）
+- 分页展示（每页 10 条）减少 DOM 节点
+- IndexedDB 查询使用索引加速（userId, chatId, email）
+- Vite 构建启用 tree shaking、代码分割、gzip 压缩
+
+---- 11.2 安全 ----
+- 密码使用 djb2 哈希存储（非明文）
+- 敏感操作二次确认（删除、清空）
+- 清空前自动备份到本地文件
+- 管理员面板密码保护（硬编码简单密码，非生产级安全）
+- XSS：React 默认转义输出
+- 无服务端 API 调用，无数据传输风险
+
+---- 11.3 已知限制 ----
+- IndexedDB 存储上限（通常数百 MB，依赖浏览器）
+- 无痕模式下 IndexedDB 不可用
+- 切换设备无法同步数据（纯本地存储）
+- 密码哈希算法简单，不适用于生产环境安全需求
+- 管理员密码硬编码，不具备真正的访问控制安全
+
+================================================================================
+十二、开发与构建命令
+================================================================================
+
+| 命令                | 说明                    |
+|---------------------|------------------------|
+| npm run dev         | 开发模式 (localhost)     |
+| npm run build       | 生产构建到 dist/         |
+| npm run type-check  | TypeScript 类型检查     |
+| npm run preview     | 预览生产构建             |
+| npm run predeploy   | 构建 + 部署到 gh-pages   |
+| npm run deploy      | 仅部署（需先构建）        |
+
+================================================================================
