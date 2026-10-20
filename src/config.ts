@@ -12,8 +12,8 @@ export const INITIAL_MSG_LIMIT = 100;
 // 向上翻历史每次条数
 export const HISTORY_LIMIT = 50;
 
-// 图片发送前压缩的最大宽度（超过则等比缩小）
-export const IMAGE_MAX_WIDTH = 1280;
+// 图片发送前压缩的最大宽度（超过则等比缩小；服务端 api.php 同样强制限宽 900）
+export const IMAGE_MAX_WIDTH = 900;
 // 图片压缩质量
 export const IMAGE_QUALITY = 0.8;
 // 超过该大小（KB）的图片才压缩

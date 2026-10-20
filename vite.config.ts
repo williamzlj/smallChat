@@ -12,8 +12,17 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // injectManifest：使用自定义 SW（src/sw.ts），以便在 fetch 处理器顶部显式放行
+      // 非 GET 请求——修复安卓 Chrome 下 SW 分发路径导致 multipart 上传 body 丢失的问题
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'autoUpdate',
       includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'manifest.json', 'icon.svg'],
+      injectManifest: {
+        // 预缓存所有静态资源（缓存策略见 src/sw.ts）
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+      },
       manifest: {
         name: 'smallChat',
         short_name: 'smallChat',
@@ -40,64 +49,8 @@ export default defineConfig({
             purpose: 'any maskable'
           }
         ]
-      },
-      workbox: {
-        // 缓存所有静态资源
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-        // 运行时缓存策略
-        runtimeCaching: [
-          {
-            // 缓存图片资源
-            urlPattern: /^https?:\/\/.*\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'image-cache',
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 30 * 24 * 60 * 60 // 30天
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          },
-          {
-            // 缓存字体文件
-            urlPattern: /^https?:\/\/fonts\.googleapis\.com\/.*/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'google-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // 1年
-              }
-            }
-          },
-          {
-            urlPattern: /^https?:\/\/fonts\.gstatic\.com\/.*/,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'gstatic-fonts-cache',
-              expiration: {
-                maxEntries: 10,
-                maxAgeSeconds: 60 * 60 * 24 * 365 // 1年
-              }
-            }
-          },
-          {
-            // CDN 资源缓存
-            urlPattern: /^https?:\/\/.*\.jsdelivr\.net\/.*/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'cdn-cache',
-              expiration: {
-                maxEntries: 50,
-                maxAgeSeconds: 30 * 24 * 60 * 60 // 30天
-              }
-            }
-          }
-        ]
       }
+      // 运行时缓存策略已迁移到自定义 SW（src/sw.ts），injectManifest 模式不再使用 workbox 选项
     })
   ],
 })

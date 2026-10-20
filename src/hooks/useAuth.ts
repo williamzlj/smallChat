@@ -98,6 +98,7 @@ export const useAuth = () => {
     async (data: {
       nickname?: string;
       color?: string;
+      signature?: string;
       oldPassword?: string;
       newPassword?: string;
     }): Promise<AuthResult> => {
@@ -105,11 +106,13 @@ export const useAuth = () => {
         const payload: {
           nickname?: string;
           color?: string;
+          signature?: string;
           old_password?: string;
           new_password?: string;
         } = {};
         if (data.nickname !== undefined) payload.nickname = data.nickname;
         if (data.color !== undefined) payload.color = data.color;
+        if (data.signature !== undefined) payload.signature = data.signature;
         if (data.newPassword) {
           payload.old_password = data.oldPassword;
           payload.new_password = data.newPassword;
@@ -125,6 +128,16 @@ export const useAuth = () => {
     [],
   );
 
+  // 头像上传成功后同步本地用户信息的版本号（触发各处 Avatar 组件刷新）
+  const setUserAvatarVer = useCallback((ver: number) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, avatar_ver: ver };
+      tokenStore.setUser(next);
+      return next;
+    });
+  }, []);
+
   return {
     user,
     isLoading,
@@ -133,5 +146,6 @@ export const useAuth = () => {
     register,
     logout,
     updateProfile,
+    setUserAvatarVer,
   };
 };

@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<meta name="description" content="smallChat — 轻量的个人信息备忘与团队协同工具。碎片化信息随手记，一键转待办，多设备同步，数据自主掌控。">
+<title>smallChat · 个人备忘与团队协同工具</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", Roboto, sans-serif;
+    color: #1f2937;
+    background: #fafafa;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { text-decoration: none; color: inherit; }
+  .container { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+  /* 顶部导航 */
+  .nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+    background: rgba(255,255,255,0.85); backdrop-filter: blur(10px);
+    border-bottom: 1px solid #eee;
+  }
+  .nav .container { display: flex; align-items: center; justify-content: space-between; height: 56px; }
+  .nav-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
+  .nav-logo-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: linear-gradient(135deg, #10b981, #06b6d4);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 16px;
+  }
+  .nav-links { display: flex; gap: 18px; font-size: 14px; color: #666; }
+  .nav-links a:hover { color: #10b981; }
+  .btn-nav {
+    background: linear-gradient(135deg, #10b981, #06b6d4);
+    color: #fff; font-size: 14px; padding: 8px 16px; border-radius: 20px;
+    font-weight: 600; transition: transform .15s;
+  }
+  .btn-nav:hover { transform: translateY(-1px); }
+  @media (max-width: 600px) { .nav-links { display: none; } }
+
+  /* Hero */
+  .hero {
+    padding: 120px 0 80px; text-align: center;
+    background: linear-gradient(180deg, #ecfdf5 0%, #fafafa 100%);
+  }
+  .hero-badge {
+    display: inline-block; padding: 6px 14px; border-radius: 20px;
+    background: #d1fae5; color: #047857; font-size: 13px; font-weight: 600;
+    margin-bottom: 24px;
+  }
+  .hero h1 {
+    font-size: clamp(28px, 6.5vw, 50px); font-weight: 800; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #0f172a 0%, #10b981 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    margin-bottom: 18px;
+  }
+  .hero p {
+    font-size: clamp(15px, 3.5vw, 18px); color: #64748b;
+    max-width: 620px; margin: 0 auto 34px;
+  }
+  .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary {
+    background: linear-gradient(135deg, #10b981, #06b6d4);
+    color: #fff; padding: 14px 30px; border-radius: 10px; font-size: 16px; font-weight: 600;
+    box-shadow: 0 4px 14px rgba(16,185,129,0.35);
+    transition: transform .15s, box-shadow .15s;
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(16,185,129,0.45); }
+  .btn-secondary {
+    background: #fff; color: #10b981; padding: 14px 30px; border-radius: 10px;
+    font-size: 16px; font-weight: 600; border: 1px solid #10b981;
+    transition: background .15s;
+  }
+  .btn-secondary:hover { background: #ecfdf5; }
+
+  /* 场景 mock */
+  .preview { padding: 60px 0 20px; }
+  .preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 700px) { .preview-grid { grid-template-columns: 1fr; } }
+  .preview-frame {
+    background: #fff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+    border: 1px solid #e5e7eb; padding: 24px; overflow: hidden;
+  }
+  .preview-card {
+    background: #f8fafc; border-radius: 12px; padding: 22px;
+    border: 1px solid #e2e8f0;
+  }
+  .preview-card h3 { font-size: 16px; margin-bottom: 12px; color: #0f172a; }
+  .mock-msg { background: #fff; padding: 10px 14px; border-radius: 10px; margin-bottom: 8px; font-size: 13px; border: 1px solid #f1f5f9; }
+  .mock-msg.me { background: #ecfdf5; border-color: #a7f3d0; }
+  .mock-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-left: 6px; font-weight: 600; }
+  .b-green { background: #dcfce7; color: #166534; }
+  .b-blue { background: #dbeafe; color: #1e40af; }
+  .b-red { background: #fee2e2; color: #991b1b; }
+  .b-orange { background: #ffedd5; color: #9a3412; }
+
+  /* 核心功能 */
+  .features { padding: 80px 0; }
+  .section-title { text-align: center; margin-bottom: 50px; }
+  .section-title h2 { font-size: clamp(24px, 5vw, 34px); font-weight: 800; margin-bottom: 10px; }
+  .section-title p { color: #64748b; font-size: 16px; }
+  .features-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+  }
+  .feature-card {
+    background: #fff; border-radius: 14px; padding: 28px;
+    border: 1px solid #e5e7eb; transition: transform .2s, box-shadow .2s;
+  }
+  .feature-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.08); }
+  .feature-icon {
+    width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+    font-size: 24px; margin-bottom: 16px;
+  }
+  .fi-1 { background: #dcfce7; color: #16a34a; }
+  .fi-2 { background: #dbeafe; color: #2563eb; }
+  .fi-3 { background: #fef3c7; color: #d97706; }
+  .fi-4 { background: #fce7f3; color: #db2777; }
+  .fi-5 { background: #e0e7ff; color: #4f46e5; }
+  .fi-6 { background: #ccfbf1; color: #0d9488; }
+  .fi-7 { background: #ffe4e6; color: #e11d48; }
+  .feature-card h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; color: #0f172a; }
+  .feature-card p { font-size: 14px; color: #64748b; }
+
+  /* 亮点详解 */
+  .highlights { padding: 60px 0; background: #fff; }
+  .highlight-item { display: grid; grid-template-columns: 1fr 1fr; gap: 50px; align-items: center; margin-bottom: 60px; }
+  .highlight-item:last-child { margin-bottom: 0; }
+  @media (max-width: 700px) { .highlight-item { grid-template-columns: 1fr; gap: 24px; } }
+  .highlight-text h3 { font-size: clamp(20px, 4vw, 26px); font-weight: 800; margin-bottom: 12px; }
+  .highlight-text p { color: #64748b; margin-bottom: 10px; }
+  .highlight-demo {
+    background: linear-gradient(135deg, #f0fdf4, #ecfeff);
+    border-radius: 16px; padding: 24px; border: 1px solid #d1fae5;
+  }
+  .demo-note-box { background: #fff; border-radius: 10px; padding: 14px; margin-bottom: 10px; border-left: 3px solid; }
+  .demo-note-box.pub { border-left-color: #3b82f6; }
+  .demo-note-box.priv { border-left-color: #10b981; }
+  .demo-note-box .lbl { font-size: 11px; color: #94a3b8; margin-bottom: 4px; font-weight: 600; }
+  .demo-note-box .txt { font-size: 13px; }
+  .todo-list { list-style: none; }
+  .todo-list li { padding: 10px 14px; background: #fff; border-radius: 8px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; border: 1px solid #e2e8f0; font-size: 13px; }
+  .todo-list li.done { text-decoration: line-through; color: #94a3b8; }
+  .check { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 11px; color: transparent; flex-shrink: 0; }
+  .todo-list li.done .check { background: #10b981; border-color: #10b981; color: #fff; }
+
+  /* 使用场景 */
+  .cases { padding: 80px 0; }
+  .cases-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px;
+  }
+  .case-card {
+    background: #fff; border-radius: 14px; padding: 26px; border: 1px solid #e5e7eb;
+    transition: transform .2s, box-shadow .2s;
+  }
+  .case-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.08); }
+  .case-card .emoji { font-size: 30px; margin-bottom: 12px; }
+  .case-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  .case-card p { font-size: 13px; color: #64748b; }
+
+  /* 使用步骤 */
+  .steps { padding: 80px 0; background: #fff; }
+  .steps-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px;
+  }
+  .step-card {
+    text-align: center; padding: 32px 22px; background: #f8fafc; border-radius: 14px;
+    border: 1px solid #e5e7eb;
+  }
+  .step-num {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: linear-gradient(135deg, #10b981, #06b6d4);
+    color: #fff; font-size: 18px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 16px;
+  }
+  .step-card h3 { font-size: 16px; margin-bottom: 8px; }
+  .step-card p { font-size: 13px; color: #64748b; }
+
+  /* 技术栈 */
+  .tech { padding: 60px 0; }
+  .tech-tags { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .tech-tag {
+    padding: 8px 16px; background: #fff; border: 1px solid #e5e7eb; border-radius: 20px; font-size: 13px;
+    color: #475569; font-weight: 500;
+  }
+
+  /* CTA 区 */
+  .cta {
+    padding: 80px 0; text-align: center;
+    background: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+    color: #fff;
+  }
+  .cta h2 { font-size: clamp(24px, 5vw, 36px); font-weight: 800; margin-bottom: 14px; }
+  .cta p { opacity: 0.9; margin-bottom: 28px; font-size: 16px; }
+  .btn-white {
+    background: #fff; color: #10b981; padding: 14px 36px; border-radius: 10px;
+    font-size: 16px; font-weight: 700; display: inline-block;
+    transition: transform .15s;
+  }
+  .btn-white:hover { transform: translateY(-2px); }
+
+  /* Footer */
+  footer { padding: 40px 0; text-align: center; color: #94a3b8; font-size: 13px; background: #0f172a; }
+  footer a { color: #94a3b8; }
+  footer a:hover { color: #10b981; }
+  footer .links { margin-bottom: 12px; display: flex; gap: 20px; justify-content: center; }
+</style>
+</head>
+<body>
+
+<!-- 顶部导航 -->
+<nav class="nav">
+  <div class="container">
+    <div class="nav-logo">
+      <span class="nav-logo-icon">✦</span>
+      <span>smallChat</span>
+    </div>
+    <div class="nav-links">
+      <a href="#features">功能</a>
+      <a href="#highlights">亮点</a>
+      <a href="#cases">场景</a>
+      <a href="#steps">上手</a>
+    </div>
+    <a href="./" class="btn-nav">打开应用</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <span class="hero-badge">📒 个人备忘 · 碎片记录 · 团队协同</span>
+    <h1>碎片信息随手记<br>团队任务高效办</h1>
+    <p>smallChat 是一款轻量的个人信息备忘与团队协同工具。工作沟通中的关键信息一键转为待办、备注和标记，手机电脑多端同步，重要事项不再遗漏。</p>
+    <div class="hero-cta">
+      <a href="./" class="btn-primary">🚀 立即体验</a>
+      <a href="#features" class="btn-secondary">了解功能</a>
+    </div>
+  </div>
+</section>
+
+<!-- 场景 mock -->
+<section class="preview">
+  <div class="container">
+    <div class="preview-grid">
+      <div class="preview-frame">
+        <div class="preview-card">
+          <h3>📝 碎片信息速记</h3>
+          <div class="mock-msg me">客户要求下周五前交付初版 <span class="mock-badge b-red">待办</span></div>
+          <div class="mock-msg me">这个接口文档是最终版，存一下 <span class="mock-badge b-blue">公共备注</span></div>
+          <div class="mock-msg me">下午灵感：新功能可以做成模板库 <span class="mock-badge b-green">私有备注</span></div>
+          <div class="mock-msg me">预算表已更新至 v3 <span class="mock-badge b-orange">重要</span></div>
+        </div>
+      </div>
+      <div class="preview-frame">
+        <div class="preview-card">
+          <h3>📋 团队待办面板</h3>
+          <div class="mock-msg">🔴 周五前提交项目周报 <span class="mock-badge b-red">高优</span></div>
+          <div class="mock-msg">🟠 联系供应商确认报价 <span class="mock-badge b-orange">进行中</span></div>
+          <div class="mock-msg">🟢 整理会议纪要并归档 <span class="mock-badge b-green">已完成</span></div>
+          <div class="mock-msg">🔵 复核新方案细节 <span class="mock-badge b-blue">已指派</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 核心功能 -->
+<section class="features" id="features">
+  <div class="container">
+    <div class="section-title">
+      <h2>核心功能</h2>
+      <p>把沟通中的信息沉淀为可管理的记录与待办</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon fi-1">🏷️</div>
+        <h3>碎片化信息记录</h3>
+        <p>灵感、结论、提醒、重要信息随手记下，支持文字 / 图片 / 文件，配合引用与颜色标记，散落的信息有处可寻。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon fi-2">✅</div>
+        <h3>一键转待办</h3>
+        <p>任何一条记录一键转为待办事项，跨项目聚合到统一面板，支持完成 / 恢复 / 归档，工作安排一目了然。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon fi-3">📁</div>
+        <h3>双重备注沉淀</h3>
+        <p>公共备注团队共享、私有备注仅自己可见，给每条记录补充上下文，日后回看不再一头雾水。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon fi-4">🎨</div>
+        <h3>四色标记分类</h3>
+        <p>红 / 橘 / 蓝 / 绿四色快速分类与优先级标注，配合置顶突出关键事项，扫一眼抓住重点。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon fi-5">↗️</div>
+        <h3>多端同步 · 随时查看</h3>
+        <p>手机、电脑、平板数据实时同步，PWA 支持安装到桌面、离线查看，随时随地处理备忘与待办。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon fi-6">🔒</div>
+        <h3>数据自主掌控</h3>
+        <p>开源后端 PHP + SQLite，部署在自己的主机上，所有记录数据完全自己保管，无需依赖第三方平台。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon fi-7">💰</div>
+        <h3>消息记账 · 自动汇总</h3>
+        <p>每条消息可记上金额与分类，支出 / 退款 / 收入 / 收入调减四类清晰；自动生成合计、分类占比、按人与逐月统计，点分类可下钻到每一笔明细，支持自定义时间范围与补记日期。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 亮点详解 -->
+<section class="highlights" id="highlights">
+  <div class="container">
+    <div class="highlight-item">
+      <div class="highlight-text">
+        <h3>✅ 待办事项高效流转</h3>
+        <p>信息太杂容易漏事？把任何一条记录一键标记为「待办」或「重要」，自动从所有项目聚合到独立面板。完成、恢复、归档，闭环管理。</p>
+        <p>待办与四色标记联动，按颜色快速扫读优先级，效率成倍提升。</p>
+      </div>
+      <div class="highlight-demo">
+        <ul class="todo-list">
+          <li><span class="check">✓</span>周五前提交项目周报<span class="mock-badge b-red">高优</span></li>
+          <li class="done"><span class="check">✓</span>联系供应商确认报价</li>
+          <li><span class="check">✓</span>整理会议纪要并归档<span class="mock-badge b-green">待办</span></li>
+          <li><span class="check">✓</span>复核新方案细节后同步团队</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="highlight-item" style="direction: rtl;">
+      <div class="highlight-text" style="direction: ltr;">
+        <h3>🔒 公共 + 私有，双重备注</h3>
+        <p>每条记录可以同时附加「公共备注」和「私有备注」。公共备注由作者或管理员维护，团队全员可见；私有备注仅自己可见，用于个人备忘。</p>
+        <p>两个独立文本框同时编辑、分别保存，互不干扰，信息沉淀更安心。</p>
+      </div>
+      <div class="highlight-demo" style="direction: ltr;">
+        <div class="demo-note-box pub">
+          <div class="lbl">🔵 公共备注（团队可见）</div>
+          <div class="txt">这份方案是项目基线，请大家以此为准。</div>
+        </div>
+        <div class="demo-note-box priv">
+          <div class="lbl">🟢 私有备注（仅自己可见）</div>
+          <div class="txt">下周需要跟进对方的交付时间。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="highlight-item">
+      <div class="highlight-text">
+        <h3>⚡ 信息整理快人一步</h3>
+        <p>引用回复、置顶强调、多选合并转发、全文搜索——常用的整理操作都在长按菜单里，双列网格布局触手可及。</p>
+        <p>还能进入文本选择模式，精准复制记录中的任意片段。</p>
+      </div>
+      <div class="highlight-demo">
+        <div class="preview-card" style="margin:0;background:#fff;">
+          <h3 style="margin-bottom:10px;">快捷操作</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:13px;">
+            <div style="background:#f1f5f9;padding:8px;border-radius:6px;text-align:center;">📋 复制</div>
+            <div style="background:#f1f5f9;padding:8px;border-radius:6px;text-align:center;">🔎 选择</div>
+            <div style="background:#f1f5f9;padding:8px;border-radius:6px;text-align:center;">↩ 引用</div>
+            <div style="background:#f1f5f9;padding:8px;border-radius:6px;text-align:center;">📌 置顶</div>
+            <div style="background:#f1f5f9;padding:8px;border-radius:6px;text-align:center;">☑ 多选</div>
+            <div style="background:#fee2e2;color:#991b1b;padding:8px;border-radius:6px;text-align:center;">🗑 删除</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 产品理念 · 设计初衷 -->
+<section id="philosophy">
+  <div class="container">
+    <div class="section-title">
+      <h2>💡 产品理念 · 对话即思考</h2>
+      <p>「你大脑的收件箱」—— 趁想法飞走前接住它：记进去只要一秒，之后再慢慢分拣、转化</p>
+    </div>
+    <div class="features-grid" style="margin-bottom: 24px;">
+      <div class="feature-card">
+        <div class="feature-icon fi-1">💬</div>
+        <h3>对话是思考的起点</h3>
+        <p>生活中很多事情从对话开始——与他人的对话，也包括与自己的对话。通过对话，我们把脑子里看不见的潜意识，变成可以观察的显意识。smallChat 鼓励对话、鼓励表达，进而促成真正的行动。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon fi-2">🔁</div>
+        <h3>对话 → 记录 → 行动</h3>
+        <p>聊天不只是沟通手段，聊天本身就是思考的方式；记录是把想法「固定下来」的过程，待办是想法的最终归宿。聊即记、记即聊——自我对话与人际对话，在这里是同一件事。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon fi-3">📥</div>
+        <h3>碎片信息的收集箱</h3>
+        <p>想法转瞬即逝，打开 Word 太慢。先随手接住：记进去只要一秒，之后再慢慢分拣——转待办、设提醒、转发到主题群归纳、订阅进日历。想法先停靠，再分流到该去的地方。</p>
+      </div>
+    </div>
+    <div class="feature-card" style="max-width: 880px; margin: 0 auto; text-align: center;">
+      <h3>典型工作流</h3>
+      <p>📱 手机上随手记下大脑中的念头 &nbsp;→&nbsp; 💻 电脑端集中整理 &nbsp;→&nbsp; ✅ 转化为待办 / 转发到专门群组归纳 &nbsp;→&nbsp; 📅 订阅到日历，到点提醒自动跟进</p>
+    </div>
+  </div>
+</section>
+
+<!-- 使用场景 -->
+<section class="cases" id="cases">
+  <div class="container">
+    <div class="section-title">
+      <h2>适用场景</h2>
+      <p>个人与团队的高效信息管理</p>
+    </div>
+    <div class="cases-grid">
+      <div class="case-card">
+        <div class="emoji">💼</div>
+        <h3>项目协作</h3>
+        <p>会议结论随手记录，行动项一键转待办，关键信息加备注标色，团队同步不打折扣。</p>
+      </div>
+      <div class="case-card">
+        <div class="emoji">📒</div>
+        <h3>个人备忘</h3>
+        <p>灵感、日程、提醒事项随手记，多端同步随时查看，碎片信息不再散落各处。</p>
+      </div>
+      <div class="case-card">
+        <div class="emoji">👥</div>
+        <h3>团队协同</h3>
+        <p>共享备注与颜色标记减少重复沟通，跨项目待办面板统一跟进，协作更顺畅。</p>
+      </div>
+      <div class="case-card">
+        <div class="emoji">🔍</div>
+        <h3>信息检索</h3>
+        <p>全文搜索快速找回历史记录，按颜色与待办状态筛选，沉淀的信息真正用得起来。</p>
+      </div>
+      <div class="case-card">
+        <div class="emoji">🧾</div>
+        <h3>财务记账</h3>
+        <p>家庭开支、项目经费分群记录——每个群独立的分类字典与统计口径，随时按时间范围出账，钱花在哪一目了然。</p>
+      </div>
+      <div class="case-card">
+        <div class="emoji">🧠</div>
+        <h3>自我对话 · 个人知识库</h3>
+        <p>给自己发消息就是记闪念：想法先停靠在收件箱，日后整理为永久笔记——正如卡片笔记法中的闪念笔记，先记下来，稍后整理。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 使用步骤 -->
+<section class="steps" id="steps">
+  <div class="container">
+    <div class="section-title">
+      <h2>三步上手</h2>
+      <p>零门槛开始高效记录与协同</p>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <h3>注册账号</h3>
+        <p>打开应用，用邮箱注册一个账号。所有设备用同一账号登录即可多端同步。</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <h3>创建协作空间</h3>
+        <p>创建一个协作空间，邀请伙伴加入；也可以单独记录，作为个人备忘使用。</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <h3>记录 → 转待办 ✨</h3>
+        <p>随手记录信息，加备注、标颜色、转待办，让每一条信息都有着落。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 技术栈 -->
+<section class="tech" id="tech">
+  <div class="container">
+    <div class="section-title">
+      <h2>技术栈</h2>
+      <p>现代、轻量、易部署</p>
+    </div>
+    <div class="tech-tags">
+      <span class="tech-tag">React 18</span>
+      <span class="tech-tag">TypeScript</span>
+      <span class="tech-tag">Vite 5</span>
+      <span class="tech-tag">TailwindCSS</span>
+      <span class="tech-tag">PHP</span>
+      <span class="tech-tag">SQLite</span>
+      <span class="tech-tag">PWA (离线可用)</span>
+      <span class="tech-tag">GitHub Pages</span>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta">
+  <div class="container">
+    <h2>准备好开始了吗？</h2>
+    <p>打开 smallChat，建立属于自己的记录与协同空间</p>
+    <a href="./" class="btn-white">打开应用 →</a>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="links">
+      <a href="./">应用首页</a>
+      <a href="https://github.com/williamzlj/smallChat" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <p>© smallChat · 个人备忘与团队协同工具 · 数据自己掌控</p>
+  </div>
+</footer>
+
+<script>
+  // 导航栏滚动效果
+  const nav = document.querySelector('.nav');
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 20) nav.style.boxShadow = '0 2px 12px rgba(0,0,0,0.06)';
+    else nav.style.boxShadow = 'none';
+  });
+</script>
+
+</body>
+</html>

@@ -15,7 +15,14 @@ interface RegisterProps {
 export const Register = ({ onRegister, onSwitchToLogin }: RegisterProps) => {
   const [username, setUsername] = useState('');
   const [nickname, setNickname] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
+  // 注册链接（?code=xxx，后台「复制注册链接」生成）打开时自动预填邀请码
+  const [inviteCode, setInviteCode] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('code') || '';
+    } catch {
+      return '';
+    }
+  });
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -57,7 +64,7 @@ export const Register = ({ onRegister, onSwitchToLogin }: RegisterProps) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 p-4">
+    <div className="min-h-app flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 p-4">
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="text-center mb-8">

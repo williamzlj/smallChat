@@ -53,6 +53,15 @@ export const useGroups = () => {
     [],
   );
 
+  // 设置成员角色（仅群主）：role 0=普通成员 1=副群主 2=观察者；成功后刷新群列表
+  const setRole = useCallback(
+    async (groupId: number, userId: number, role: 0 | 1 | 2) => {
+      await api.groupsSetRole(groupId, userId, role);
+      await refresh();
+    },
+    [refresh],
+  );
+
   const leave = useCallback(
     async (groupId: number) => {
       await api.groupsLeave(groupId);
@@ -69,5 +78,5 @@ export const useGroups = () => {
     [refresh],
   );
 
-  return { groups, loading, refresh, create, rename, invite, leave, remove };
+  return { groups, loading, refresh, create, rename, invite, setRole, leave, remove };
 };

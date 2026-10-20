@@ -30,7 +30,7 @@ export const Login = ({ onLogin, onSwitchToRegister }: LoginProps) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 p-4">
+    <div className="min-h-app flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 p-4">
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="text-center mb-8">

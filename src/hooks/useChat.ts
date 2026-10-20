@@ -3,14 +3,43 @@ import { api } from '../api/client';
 import { ChatMessage, User } from '../api/types';
 import { POLL_INTERVAL, INITIAL_MSG_LIMIT, HISTORY_LIMIT } from '../config';
 
+export interface SendTextOpts {
+  replyTo?: ChatMessage | null; // 引用回复的目标消息
+  mentions?: number[]; // 被 @ 的用户 id
+}
+
+// 生成引用摘要（与后端 format_message 的 reply 字段一致）
+function makeReplySummary(m: ChatMessage) {
+  return {
+    id: m.id,
+    nickname: m.nickname,
+    type: m.type,
+    content:
+      m.type === 'text'
+        ? m.content.slice(0, 80)
+        : m.type === 'image'
+          ? '[图片]'
+          : m.type === 'file'
+            ? `[文件] ${m.content}`
+            : '[聊天记录]',
+    deleted: 0,
+  };
+}
+
 // 单个群聊的消息：初始加载 + 增量轮询 + 向上翻历史 + 发送/上传/删除
-export const useChat = (groupId: number | null, currentUser: User | null) => {
+export const useChat = (
+  groupId: number | null,
+  currentUser: User | null,
+  focusMsgId: number | null = null,
+) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  // 从待办/重要面板跳转来的目标消息：加载其附近消息后滚动高亮
+  const [highlightMsgId, setHighlightMsgId] = useState<number | null>(null);
 
   const maxIdRef = useRef(0);
   const minIdRef = useRef(0);
@@ -43,11 +72,14 @@ export const useChat = (groupId: number | null, currentUser: User | null) => {
     });
   }, []);
 
-  // 进入群聊：拉最近消息
+  // 进入群聊：拉最近消息；若指定 focusMsgId（面板跳转定位）则拉该消息前后各 20 条
   useEffect(() => {
     groupIdRef.current = groupId;
     if (groupId === null) {
       setMessages([]);
+      setLoading(false);
+      setHasMore(false);
+      setHighlightMsgId(null);
       maxIdRef.current = 0;
       minIdRef.current = 0;
       return;
@@ -56,11 +88,38 @@ export const useChat = (groupId: number | null, currentUser: User | null) => {
     let cancelled = false;
     setLoading(true);
     setMessages([]);
+    setHasMore(false);
+    setHighlightMsgId(null);
     maxIdRef.current = 0;
     minIdRef.current = 0;
 
+    // 安全超时：15 秒后强制结束加载态，避免网络异常时一直转圈
+    const safetyTimer = setTimeout(() => {
+      if (!cancelled) setLoading(false);
+    }, 15000);
+
     (async () => {
       try {
+        if (focusMsgId && focusMsgId > 0) {
+          // 定位模式：以目标消息为中心拉取一页
+          const { messages: list, has_more_before } = await api.messagesAround(
+            groupId,
+            focusMsgId,
+            20,
+          );
+          if (cancelled || groupIdRef.current !== groupId) return;
+          setMessages(list);
+          setHighlightMsgId(focusMsgId);
+          if (list.length > 0) {
+            maxIdRef.current = list[list.length - 1].id;
+            minIdRef.current = list[0].id;
+          } else {
+            maxIdRef.current = focusMsgId;
+            minIdRef.current = focusMsgId;
+          }
+          setHasMore(has_more_before === 1);
+          return;
+        }
         const { messages: list, max_id } = await api.messagesList(
           groupId,
           0,
@@ -79,14 +138,17 @@ export const useChat = (groupId: number | null, currentUser: User | null) => {
       } catch (e) {
         console.warn('加载消息失败', e);
       } finally {
-        if (!cancelled) setLoading(false);
+        clearTimeout(safetyTimer);
+        // 仅当当前群未变时才重置 loading，避免覆盖新群的加载态
+        if (groupIdRef.current === groupId) setLoading(false);
       }
     })();
 
     return () => {
       cancelled = true;
+      clearTimeout(safetyTimer);
     };
-  }, [groupId]);
+  }, [groupId, focusMsgId]);
 
   // 增量轮询（页面可见时）
   useEffect(() => {
@@ -154,9 +216,9 @@ export const useChat = (groupId: number | null, currentUser: User | null) => {
     }
   }, [groupId, loadingMore, hasMore]);
 
-  // 发送文本
+  // 发送文本（可选引用回复 / @提醒）
   const sendText = useCallback(
-    async (content: string): Promise<void> => {
+    async (content: string, opts?: SendTextOpts): Promise<void> => {
       const gid = groupIdRef.current;
       if (!gid || !currentUser || !content.trim()) return;
       setSending(true);
@@ -167,11 +229,28 @@ export const useChat = (groupId: number | null, currentUser: User | null) => {
         user_id: currentUser.id,
         nickname: currentUser.nickname,
         color: currentUser.color,
+        avatar_ver: currentUser.avatar_ver,
         type: 'text',
         content: content.trim(),
         file: null,
         is_todo: 0,
+        todo_status: 0,
+        todo_note: null,
+        todo_archived: 0,
+        important_archived: 0,
+        due_at: null,
+        note: '',
+        reply_to: opts?.replyTo?.id ?? 0,
+        reply: opts?.replyTo ? makeReplySummary(opts.replyTo) : null,
+        mentions: opts?.mentions ?? [],
+        edited_at: null,
         deleted: 0,
+        recalled: 0,
+        color_mark: 0,
+        amount_kind: 0,
+        amount_cents: null,
+        amount_cat: '',
+        amount_date: null,
         created_at: nowText(),
         status: 'sending',
         clientTempId: tempId,
@@ -182,6 +261,8 @@ export const useChat = (groupId: number | null, currentUser: User | null) => {
           group_id: gid,
           type: 'text',
           content: content.trim(),
+          ...(opts?.replyTo ? { reply_to: opts.replyTo.id } : {}),
+          ...(opts?.mentions && opts.mentions.length > 0 ? { mentions: opts.mentions } : {}),
         });
         if (id > maxIdRef.current) maxIdRef.current = id;
         setMessages((prev) =>
@@ -218,11 +299,28 @@ export const useChat = (groupId: number | null, currentUser: User | null) => {
         user_id: currentUser.id,
         nickname: currentUser.nickname,
         color: currentUser.color,
+        avatar_ver: currentUser.avatar_ver,
         type: kind,
         content: kind === 'file' ? filename : '',
         file: null,
         is_todo: 0,
+        todo_status: 0,
+        todo_note: null,
+        todo_archived: 0,
+        important_archived: 0,
+        due_at: null,
+        note: '',
+        reply_to: 0,
+        reply: null,
+        mentions: [],
+        edited_at: null,
         deleted: 0,
+        recalled: 0,
+        color_mark: 0,
+        amount_kind: 0,
+        amount_cents: null,
+        amount_cat: '',
+        amount_date: null,
         created_at: nowText(),
         status: 'sending',
         clientTempId: tempId,
@@ -291,17 +389,93 @@ export const useChat = (groupId: number | null, currentUser: User | null) => {
     }
   }, [messages]);
 
+  // 撤回消息（作者本人 2 分钟内，本地立即标记 recalled，轮询同步其他设备）
+  const recallMessage = useCallback(async (id: number) => {
+    const target = messages.find((m) => m.id === id);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === id ? { ...m, deleted: 1, recalled: 1, content: '', file: null } : m,
+      ),
+    );
+    try {
+      await api.messagesRecall(id);
+    } catch (e) {
+      // 失败回滚
+      if (target) {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === id ? target : m)),
+        );
+      }
+      throw e;
+    }
+  }, [messages]);
+
+  // 设置待办状态（0普通 1待办 2已完成），note 传 undefined 不修改备注
+  const setTodoStatus = useCallback(
+    async (id: number, status: number, note?: string) => {
+      const target = messages.find((m) => m.id === id);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === id
+            ? {
+                ...m,
+                todo_status: status,
+                todo_note: note !== undefined ? note : m.todo_note,
+                // 转回普通消息时清掉提醒（与后端行为一致）
+                due_at: status === 0 ? null : m.due_at,
+              }
+            : m,
+        ),
+      );
+      try {
+        await api.messagesSetTodo(id, status, note);
+      } catch (e) {
+        // 失败回滚
+        if (target) {
+          setMessages((prev) => prev.map((m) => (m.id === id ? target : m)));
+        }
+        throw e;
+      }
+    },
+    [messages],
+  );
+
+  // 设置颜色标记（0无 1红 2橙 3蓝）
+  const setColorStatus = useCallback(
+    async (id: number, color: number) => {
+      const target = messages.find((m) => m.id === id);
+      setMessages((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, color_mark: color } : m)),
+      );
+      try {
+        await api.messagesSetColor(id, color);
+      } catch (e) {
+        if (target) {
+          setMessages((prev) => prev.map((m) => (m.id === id ? target : m)));
+        }
+        throw e;
+      }
+    },
+    [messages],
+  );
+
   return {
     messages,
+    setMessages,
     loading,
     loadingMore,
     hasMore,
     sending,
     uploadProgress,
+    highlightMsgId,
+    setHighlightMsgId,
     loadMore,
     sendText,
     sendFileMessage,
     deleteMessage,
+    recallMessage,
+    setTodoStatus,
+    setColorStatus,
   };
 };
 

@@ -1,19 +1,26 @@
 import { useState, useEffect } from 'react';
-import { X, LogOut, Minus, Plus, Monitor, Trash2, Check } from 'lucide-react';
+import { X, LogOut, Minus, Plus, Monitor, Trash2, Check, Camera, RefreshCw, Copy } from 'lucide-react';
 import { User, TokenInfo } from '../../api/types';
 import { api } from '../../api/client';
+import { setCachedAvatar } from '../../api/avatarCache';
 import { AuthResult } from '../../hooks/useAuth';
+import { Avatar } from '../Avatar';
+import { AvatarCropModal } from '../AvatarCropModal';
 
 interface Props {
   user: User;
   fontSize: number;
   onFontSizeChange: (size: number) => void;
+  bubbleStyle: 'green' | 'white'; // 我的气泡样式（仅本设备 localStorage）
+  onBubbleStyleChange: (style: 'green' | 'white') => void;
   onUpdate: (data: {
     nickname?: string;
     color?: string;
+    signature?: string;
     oldPassword?: string;
     newPassword?: string;
   }) => Promise<AuthResult>;
+  onAvatarChanged: (ver: number) => void;
   onLogout: () => void;
   onClose: () => void;
 }
@@ -27,12 +34,16 @@ export const ProfileSettings = ({
   user,
   fontSize,
   onFontSizeChange,
+  bubbleStyle,
+  onBubbleStyleChange,
   onUpdate,
+  onAvatarChanged,
   onLogout,
   onClose,
 }: Props) => {
   const [nickname, setNickname] = useState(user.nickname);
   const [color, setColor] = useState(user.color);
+  const [signature, setSignature] = useState(user.signature || '');
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
@@ -40,15 +51,44 @@ export const ProfileSettings = ({
   const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
+  const [cropOpen, setCropOpen] = useState(false);
+  const [isDarkMode] = useState(() => document.documentElement.classList.contains('dark'));
+  // 日历订阅
+  const [icsCopied, setIcsCopied] = useState(false);
+  const [icsUrl, setIcsUrl] = useState('');
+  const [icsBusy, setIcsBusy] = useState(false);
 
   useEffect(() => {
     api
       .tokensList()
       .then(({ tokens: list }) => setTokens(list))
       .catch(() => undefined);
+    // 日历订阅 token（首次自动生成）
+    api
+      .eventsIcsToken()
+      .then((r) => setIcsUrl(api.icsUrlOf(r.token)))
+      .catch(() => undefined);
   }, []);
 
-  const profileChanged = nickname.trim() !== user.nickname || color !== user.color;
+  // 重置订阅地址：旧地址立即失效，需在日历 App 重新添加
+  const resetIcs = async () => {
+    if (!confirm('重置后旧订阅地址将立即失效，需要在手机日历里删除旧订阅、重新添加新地址。确定重置吗？')) return;
+    setIcsBusy(true);
+    try {
+      const r = await api.eventsRotateIcs();
+      setIcsUrl(api.icsUrlOf(r.token));
+      setIcsCopied(false);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '重置失败');
+    } finally {
+      setIcsBusy(false);
+    }
+  };
+
+  const profileChanged =
+    nickname.trim() !== user.nickname ||
+    color !== user.color ||
+    signature.trim() !== (user.signature || '');
 
   const saveProfile = async () => {
     setError('');
@@ -61,6 +101,7 @@ export const ProfileSettings = ({
     const r = await onUpdate({
       nickname: nickname.trim() !== user.nickname ? nickname.trim() : undefined,
       color: color !== user.color ? color : undefined,
+      signature: signature.trim() !== (user.signature || '') ? signature.trim() : undefined,
     });
     setBusy(false);
     if (r.success) setSuccess('资料已保存');
@@ -133,6 +174,25 @@ export const ProfileSettings = ({
           {/* 资料 */}
           <section className="space-y-4">
             <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">个人资料</h3>
+            {/* 头像：大号头像居中，按钮另起一行 */}
+            <div className="flex flex-col items-center space-y-2.5">
+              <Avatar
+                userId={user.id}
+                nickname={user.nickname}
+                color={user.color}
+                avatarVer={user.avatar_ver}
+                size={80}
+                onClick={() => setCropOpen(true)}
+                className="ring-2 ring-gray-200 dark:ring-gray-600"
+              />
+              <button
+                onClick={() => setCropOpen(true)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 text-sm rounded-lg bg-green-500 text-white hover:bg-green-600"
+              >
+                <Camera className="w-4 h-4" />
+                <span>更换头像</span>
+              </button>
+            </div>
             <div>
               <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">昵称</label>
               <input
@@ -141,6 +201,19 @@ export const ProfileSettings = ({
                 onChange={(e) => setNickname(e.target.value)}
                 maxLength={20}
                 className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">
+                签名
+                <span className="text-xs text-gray-400 ml-2">{signature.length}/500，好友查看你的信息时可见</span>
+              </label>
+              <textarea
+                value={signature}
+                onChange={(e) => setSignature(e.target.value.slice(0, 500))}
+                rows={3}
+                placeholder="介绍一下自己吧"
+                className={`${inputCls} resize-none`}
               />
             </div>
             <div>
@@ -193,6 +266,38 @@ export const ProfileSettings = ({
             <p className="text-xs text-gray-400">范围 14px - 24px，仅保存在本设备</p>
           </section>
 
+          {/* 我的气泡样式：两个预览小块单选，与字号一样仅保存在本设备 */}
+          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">我的气泡样式</h3>
+            <div className="flex gap-3">
+              <button
+                onClick={() => onBubbleStyleChange('green')}
+                className={`flex-1 rounded-xl p-3 bg-gray-50 dark:bg-gray-700/60 transition-shadow ${
+                  bubbleStyle === 'green' ? 'ring-2 ring-green-500' : 'ring-1 ring-gray-200 dark:ring-gray-600 hover:ring-gray-300'
+                }`}
+                title="自己发的消息显示为绿底白字"
+              >
+                <span className="block ml-auto w-fit max-w-full px-3 py-1.5 rounded-lg rounded-br-md bg-green-500 text-white text-sm shadow-sm">
+                  你好
+                </span>
+                <span className="block mt-2 text-center text-sm text-gray-600 dark:text-gray-300">经典绿底</span>
+              </button>
+              <button
+                onClick={() => onBubbleStyleChange('white')}
+                className={`flex-1 rounded-xl p-3 bg-gray-50 dark:bg-gray-700/60 transition-shadow ${
+                  bubbleStyle === 'white' ? 'ring-2 ring-green-500' : 'ring-1 ring-gray-200 dark:ring-gray-600 hover:ring-gray-300'
+                }`}
+                title="自己发的消息与对方一样白底黑字"
+              >
+                <span className="block ml-auto w-fit max-w-full px-3 py-1.5 rounded-lg rounded-br-md bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 text-sm shadow-sm">
+                  你好
+                </span>
+                <span className="block mt-2 text-center text-sm text-gray-600 dark:text-gray-300">简洁白底</span>
+              </button>
+            </div>
+            <p className="text-xs text-gray-400">仅改变本设备显示，不影响其他成员</p>
+          </section>
+
           {/* 改密码 */}
           <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
             <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">修改密码</h3>
@@ -239,7 +344,7 @@ export const ProfileSettings = ({
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-800 dark:text-gray-200 truncate">
                       {t.device_name || '未知设备'}
-                      {t.is_current === 1 && <span className="ml-2 text-xs text-green-600">（本设备）</span>}
+                      {t.is_current === 1 && <span className="ml-2 text-sm text-green-600">（本设备）</span>}
                     </p>
                     <p className="text-xs text-gray-400">有效期至 {t.expires_at}</p>
                   </div>
@@ -257,6 +362,57 @@ export const ProfileSettings = ({
             </div>
           </section>
 
+          {/* 日历订阅 */}
+          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">日历订阅</h3>
+            <p className="text-xs text-gray-400">
+              给待办设置到点提醒后，把下面的链接添加到手机日历（iPhone：日历 → 账户 → 添加订阅日历；
+              安卓：日历 App → 设置 → 添加账号/订阅），到点前 10 分钟会弹系统通知。
+              链接包含你的专属订阅凭证，请勿分享给他人；若怀疑泄露，可点击下方「重置订阅地址」。
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                readOnly
+                value={icsUrl}
+                placeholder="正在生成订阅地址…"
+                onFocus={(e) => e.target.select()}
+                className={`flex-1 min-w-0 px-3 py-2 rounded-lg border text-xs truncate ${
+                  isDarkMode
+                    ? 'bg-gray-700 border-gray-600 text-gray-300'
+                    : 'bg-gray-50 border-gray-200 text-gray-600'
+                }`}
+              />
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(icsUrl);
+                    setIcsCopied(true);
+                    setTimeout(() => setIcsCopied(false), 1500);
+                  } catch {
+                    // 剪贴板不可用时忽略
+                  }
+                }}
+                disabled={!icsUrl}
+                className="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="复制订阅链接"
+              >
+                <Copy className="w-4 h-4" />
+                <span>{icsCopied ? '已复制' : '复制'}</span>
+              </button>
+            </div>
+            <div>
+              <button
+                onClick={() => void resetIcs()}
+                disabled={icsBusy || !icsUrl}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-amber-400 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="停用旧地址并生成新地址"
+              >
+                <RefreshCw className={`w-4 h-4 ${icsBusy ? 'animate-spin' : ''}`} />
+                <span>重置订阅地址</span>
+              </button>
+            </div>
+          </section>
+
           {error && <p className="text-sm text-red-500">{error}</p>}
           {success && <p className="text-sm text-green-600">{success}</p>}
 
@@ -268,6 +424,25 @@ export const ProfileSettings = ({
             <span>退出登录</span>
           </button>
         </div>
+
+        {/* 头像裁剪上传 */}
+        {cropOpen && (
+          <AvatarCropModal
+            isDarkMode={isDarkMode}
+            onClose={() => setCropOpen(false)}
+            onDone={async (dataUrl) => {
+              try {
+                const r = await api.setAvatar(dataUrl);
+                setCachedAvatar(user.id, r.avatar_ver, dataUrl);
+                onAvatarChanged(r.avatar_ver);
+                setCropOpen(false);
+                setSuccess('头像已更新');
+              } catch (e) {
+                setError(e instanceof Error ? e.message : '头像上传失败');
+              }
+            }}
+          />
+        )}
       </div>
     </div>
   );

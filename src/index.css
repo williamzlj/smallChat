@@ -34,30 +34,51 @@ html, body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   background-color: #e5e5e5;
   min-height: 100vh;
+  min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   height: 100%;
   width: 100%;
   position: relative;
+  /* 禁止移动端浏览器字体自动膨胀（Firefox 安卓版会放大它认为"过小"的文字，
+     导致与 Chrome 显示不一致；Tailwind preflight 只含 -webkit- 前缀，未覆盖 Firefox） */
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 #root {
   height: 100%;
   width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
   padding-bottom: env(safe-area-inset-bottom);
   box-sizing: border-box;
+}
+
+/* iOS Chrome/Safari 地址栏导致 100vh 包含地址栏高度，底部输入框被截断。
+   dvh 随地址栏显示/隐藏动态调整，使内容始终在可见区域内。
+   旧浏览器回退到 100vh。 */
+.h-app {
+  height: 100vh;
+  height: 100dvh;
+}
+.min-h-app {
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 @media screen and (max-width: 768px) {
   html, body {
     height: 100%;
     min-height: calc(100vh - env(safe-area-inset-bottom));
+    min-height: calc(100dvh - env(safe-area-inset-bottom));
   }
   
   #root {
     height: 100%;
     min-height: 100vh;
+    min-height: 100dvh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
   }
@@ -137,6 +158,16 @@ input:focus {
 
 button:focus {
   outline: none;
+}
+
+/* 部分内置浏览器（微信/TBS 等）会把表单控件的 user-select 重置为 none，
+   导致输入框里的文字无法长按/鼠标拖选；显式恢复，保证编辑长文本时可选择删除 */
+input,
+textarea,
+[contenteditable="true"] {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  -webkit-touch-callout: default !important;
 }
 
 input::placeholder {

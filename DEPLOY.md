@@ -1,139 +1,85 @@
-# GitHub Pages 部署指南
+# smallChat 部署指南
 
-## 📋 前置准备
+## 项目结构
 
-1. 确保已安装 Git
-2. 有 GitHub 账号
-
-## 🚀 部署步骤（已为你配置好！）
-
-你的配置信息：
-- GitHub 用户名：`williamzlj`
-- 仓库名称：`sudong`
-- 访问地址：`https://williamzlj.github.io/sudong`
-
-### 第一步：创建 GitHub 仓库
-
-1. 访问 https://github.com/new
-2. 填写仓库名称：`sudong`
-3. 选择 Public（公开仓库）
-4. **不要**勾选 "Initialize this repository with a README"
-5. 点击 "Create repository"
-
-### 第二步：配置本地 Git（在你的电脑上执行）
-
-```bash
-# 1. 初始化 Git 仓库
-git init
-
-# 2. 添加所有文件
-git add .
-
-# 3. 首次提交
-git commit -m "Initial commit: Tree Hole Chat with PWA"
-
-# 4. 添加远程仓库
-git remote add origin https://github.com/williamzlj/sudong.git
-
-# 5. 推送到 GitHub
-git branch -M main
-git push -u origin main
+```
+smallChat/
+├── Browser/   # 前端（React + TypeScript + Vite）
+└── server/    # 后端（PHP 单入口 api.php）
 ```
 
-### 第三步：部署到 GitHub Pages
+## 前端部署（GitHub Pages）
 
-✅ **vite.config.ts 和 package.json 已配置完成！**
+前端通过 `_publish_ghpages.ps1` 脚本直接调用 GitHub Git Data API 发布到 `gh-pages` 分支，无需依赖 `gh-pages` npm 包。
 
-直接运行：
+### 前置条件
 
-```bash
-npm run deploy
+- 已安装 Git，且 GitHub 凭据已通过 `git credential fill` 缓存
+- GitHub 仓库：`williamzlj/smallChat`
+- 已执行 `npm install` 安装依赖
+
+### 部署步骤
+
+```powershell
+cd Browser
+npm run build
+powershell -ExecutionPolicy Bypass -File .\_publish_ghpages.ps1
 ```
 
-然后运行：
+脚本会：
+1. 构建产物输出到 `dist/`
+2. 通过 GitHub API 将 `dist/` 内所有文件上传为 blob
+3. 创建新的 tree/commit 并更新 `gh-pages` 分支引用
+4. 清理旧的 `assets/index-*.js/css` 产物
 
-```bash
-npm run deploy
+成功后输出 `published commit <sha>`。
+
+### 访问地址
+
+https://williamzlj.github.io/smallChat/
+
+> 注意：PWA 的 Service Worker 会缓存旧版本，更新后需强制刷新（Ctrl+F5）或等待自动更新。
+
+## 后端部署（PHP 虚拟主机）
+
+后端为单文件 `server/api.php`，通过 FTP 上传到主机即可。
+
+### 前置条件
+
+- FTP 凭据（主机商提供）
+- PHP 7.4+，支持 PDO（SQLite）
+
+### 部署步骤
+
+将 `server/` 目录下的文件上传到主机网站根目录（如 `WEB/smallChat/`）：
+
+```
+api.php          # 主入口
+admin.php        # 管理后台
+config.php       # 配置（数据库路径、密钥等）
+lib/             # 公共库（db.php, helper.php）
+data/            # SQLite 数据库目录（需写权限）
+uploads/         # 上传文件目录（需写权限）
 ```
 
-**方式二：使用一键部署脚本**
+### OPcache 注意
 
-编辑 `package.json` 中的 `homepage` 字段：
-```json
-"homepage": "https://YOUR_USERNAME.github.io/YOUR_REPO_NAME"
+景安等虚拟主机开启了 OPcache，修改 `api.php` 后可能需要等待 1-2 分钟缓存过期才会生效。可通过访问接口验证返回结果是否为新逻辑。
+
+## 本地开发
+
+```powershell
+cd Browser
+npm run dev      # 启动 Vite 开发服务器（默认 http://localhost:5173）
 ```
 
-编辑 `vite.config.ts` 中的 `repoName` 变量。
+后端开发：直接编辑 `server/api.php`，通过线上 API 或本地 PHP 环境调试。
 
-然后运行：
-```bash
-npm run deploy
-```
+## 常用脚本
 
-## 📱 访问你的网站
-
-部署完成后，访问：
-```
-https://YOUR_USERNAME.github.io/YOUR_REPO_NAME
-```
-
-**注意：** GitHub Pages 可能需要 1-2 分钟才能上线。
-
-## 🔄 后续更新
-
-每次修改代码后，重新部署：
-
-```bash
-# 1. 提交你的修改
-git add .
-git commit -m "Your update message"
-git push
-
-# 2. 部署到 GitHub Pages
-npm run deploy
-```
-
-## ⚙️ 配置说明
-
-### vite.config.ts 配置
-
-- `repoName`：你的 GitHub 仓库名称
-- `base`：GitHub Pages 所需的基础路径
-- 如果是用户/组织页面（username.github.io），`repoName` 留空
-
-### package.json 脚本说明
-
-- `npm run dev`：启动开发服务器
-- `npm run build`：构建生产版本
-- `npm run preview`：预览生产版本
-- `npm run deploy`：部署到 GitHub Pages
-- `npm run type-check`：检查 TypeScript 类型
-
-## 🎯 PWA 注意事项
-
-GitHub Pages 支持 HTTPS，所以 PWA 功能可以正常使用：
-- ✅ 添加到主屏幕
-- ✅ Service Worker
-- ✅ 离线访问（首次访问后）
-- ✅ 全屏显示
-
-## 🐛 常见问题
-
-**Q: 部署后页面空白？**
-A: 检查 `vite.config.ts` 中的 `repoName` 是否正确设置。
-
-**Q: 图片加载失败？**
-A: 确保 `base` 路径配置正确。
-
-**Q: 如何查看部署日志？**
-A: 在 GitHub 仓库中，点击 Settings → Pages → 查看部署状态。
-
-## 📝 手动部署备选方案
-
-如果 `gh-pages` 工具遇到问题，可以手动部署：
-
-1. 运行 `npm run build`
-2. 在 GitHub 仓库中，进入 Settings → Pages
-3. Source: 选择 "Deploy from a branch"
-4. Branch: 选择 `gh-pages` 分支（如果没有，先创建）
-5. 将 `dist/` 目录的内容上传到该分支
+| 命令 | 说明 |
+| --- | --- |
+| `npm run dev` | 启动开发服务器 |
+| `npm run build` | 构建生产版本到 `dist/` |
+| `npm run type-check` | TypeScript 类型检查 |
+| `npm run preview` | 预览生产构建 |
