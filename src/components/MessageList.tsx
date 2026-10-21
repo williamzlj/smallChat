@@ -376,7 +376,7 @@ export const MessageList = ({
       {/* 多选操作栏 */}
       {selectMode && (
         <div
-          className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 pl-4 pr-10 py-2.5 rounded-2xl shadow-xl border max-w-[calc(100%-1.5rem)] ${
+          className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center justify-center gap-x-3 gap-y-3 px-4 py-3 sm:gap-y-2 sm:py-2.5 sm:pr-10 rounded-2xl shadow-xl border max-w-[calc(100%-1.5rem)] ${
             isDarkMode ? 'bg-gray-700 border-gray-600 text-gray-100' : 'bg-white border-gray-200 text-gray-800'
           }`}
         >
@@ -384,34 +384,34 @@ export const MessageList = ({
           <button
             onClick={confirmCopy}
             disabled={selected.size === 0}
-            className={`flex items-center space-x-1 px-3 py-1.5 text-sm rounded-full disabled:opacity-50 whitespace-nowrap flex-shrink-0 ${
+            className={`flex items-center space-x-1.5 px-4 py-2.5 text-base rounded-full disabled:opacity-50 whitespace-nowrap flex-shrink-0 sm:space-x-1 sm:px-3 sm:py-1.5 sm:text-sm ${
               isDarkMode ? 'bg-gray-600 text-gray-100 hover:bg-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            <Copy className="w-4 h-4" />
+            <Copy className="w-5 h-5 sm:w-4 sm:h-4" />
             <span>合并复制</span>
           </button>
           <button
             onClick={confirmShareCard}
             disabled={selected.size === 0}
-            className={`flex items-center space-x-1 px-3 py-1.5 text-sm rounded-full disabled:opacity-50 whitespace-nowrap flex-shrink-0 ${
+            className={`flex items-center space-x-1.5 px-4 py-2.5 text-base rounded-full disabled:opacity-50 whitespace-nowrap flex-shrink-0 sm:space-x-1 sm:px-3 sm:py-1.5 sm:text-sm ${
               isDarkMode ? 'bg-gray-600 text-gray-100 hover:bg-gray-500' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
-            <ImageDown className="w-4 h-4" />
+            <ImageDown className="w-5 h-5 sm:w-4 sm:h-4" />
             <span>生成卡片</span>
           </button>
           <button
             onClick={confirmForward}
             disabled={selected.size === 0}
-            className="flex items-center space-x-1 px-3 py-1.5 text-sm rounded-full bg-green-500 text-white hover:bg-green-600 disabled:opacity-50 whitespace-nowrap flex-shrink-0"
+            className="flex items-center space-x-1.5 px-4 py-2.5 text-base rounded-full bg-green-500 text-white hover:bg-green-600 disabled:opacity-50 whitespace-nowrap flex-shrink-0 sm:space-x-1 sm:px-3 sm:py-1.5 sm:text-sm"
           >
-            <SendHorizontal className="w-4 h-4" />
+            <SendHorizontal className="w-5 h-5 sm:w-4 sm:h-4" />
             <span>合并转发</span>
           </button>
           <button
             onClick={exitSelect}
-            className={`absolute top-1.5 right-1.5 p-1.5 rounded-full ${isDarkMode ? 'text-gray-300 hover:bg-gray-600' : 'text-gray-500 hover:bg-gray-100'}`}
+            className={`absolute top-1 right-1 p-1 rounded-full ${isDarkMode ? 'text-gray-300 hover:bg-gray-600' : 'text-gray-500 hover:bg-gray-100'}`}
             title="取消"
           >
             <X className="w-4 h-4" />

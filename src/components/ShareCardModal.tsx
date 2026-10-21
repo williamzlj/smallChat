@@ -703,14 +703,6 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                   className="flex-1 min-w-[120px] accent-green-500"
                 />
                 <span className={`w-10 text-right text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{style.fontSize}px</span>
-              </>,
-            )}
-            {settingRow(
-              '字体',
-              <>
-                {Object.entries(FONT_OPTS).map(([key, o]) =>
-                  optBtn(style.fontKey === key, () => setStyle((s) => ({ ...s, fontKey: key })), o.label),
-                )}
                 <button
                   onClick={() => setStyle((s) => ({ ...s, bold: !s.bold }))}
                   title="正文加粗"
@@ -724,6 +716,14 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                 >
                   <Bold className="w-4 h-4" />
                 </button>
+              </>,
+            )}
+            {settingRow(
+              '字体',
+              <>
+                {Object.entries(FONT_OPTS).map(([key, o]) =>
+                  optBtn(style.fontKey === key, () => setStyle((s) => ({ ...s, fontKey: key })), o.label),
+                )}
               </>,
             )}
             {settingRow(
@@ -765,11 +765,18 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                   ref={cardRef}
                   style={{ backgroundColor: t.bg, fontFamily: font, fontSize: style.fontSize, lineHeight: 1.8, padding }}
                 >
-                  {/* 顶部：装饰双引号（左）+ 标题（居中，与双引号同行；黑体、黑色，比双引号小 4 号）。
+                  {/* 顶部：装饰双引号（左）+ 标题（居中，与双引号同行；黑体、黑色，字号 = min(正文×1.6, 32)）。
                       标题用绝对定位居中，不挤动双引号；标题显示时容器保底行高，避免双引号关闭后正文贴顶。
                       深色主题卡片底为深色，黑色标题不可见，故 dark 下用白；
                       字体：优先黑体（Windows SimHei），Mac/iOS/安卓无黑体时回退系统无衬线粗体效果 */}
-                  <div style={{ position: 'relative', minHeight: style.showTitle && title.trim() ? style.fontSize * 2 : undefined }}>
+                  {/* 标题区上方额外留白：随正文字号联动（默认 16px 正文约 8px） */}
+                  <div
+                    style={{
+                      position: 'relative',
+                      marginTop: Math.round(style.fontSize * 0.5),
+                      minHeight: style.showTitle && title.trim() ? style.fontSize * 2 : undefined,
+                    }}
+                  >
                     {style.showQuote && (
                       <div style={{ fontFamily: 'Georgia, serif', fontSize: style.fontSize * 2, lineHeight: 1, color: t.quote }}>“</div>
                     )}
@@ -783,7 +790,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                           textAlign: 'center',
                           fontFamily: 'SimHei, "Heiti SC", "Microsoft YaHei", sans-serif',
                           fontWeight: 700,
-                          fontSize: style.fontSize * 2 - 4,
+                          fontSize: Math.min(style.fontSize * 1.6, 32),
                           lineHeight: 1,
                           color: theme === 'dark' ? '#f5f5f5' : '#000',
                           whiteSpace: 'nowrap',

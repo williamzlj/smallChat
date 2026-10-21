@@ -377,23 +377,25 @@ export const InputBox = ({
             <button
               onClick={() => setCropSrc(pending.url)}
               disabled={sending}
-              className={`flex-shrink-0 px-2.5 py-1.5 text-sm rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1 ${
+              className={`flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${
                 isDarkMode ? 'text-gray-200 hover:bg-gray-600' : 'text-gray-700 hover:bg-gray-200'
               }`}
               title="裁剪图片"
+              aria-label="裁剪图片"
             >
-              <Crop className="w-4 h-4" />
-              裁剪
+              <Crop className="w-5 h-5" />
             </button>
           )}
           <button
             onClick={() => setPending(null)}
             disabled={sending}
-            className={`flex-shrink-0 px-3 py-1.5 text-sm rounded-lg transition-colors disabled:opacity-50 ${
+            className={`flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 ${
               isDarkMode ? 'text-gray-300 hover:bg-gray-600' : 'text-gray-600 hover:bg-gray-200'
             }`}
+            title="取消发送"
+            aria-label="取消发送"
           >
-            取消
+            <X className="w-5 h-5" />
           </button>
           <button
             onClick={confirmPending}
