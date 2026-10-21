@@ -25,16 +25,34 @@ const THEMES: Record<CardTheme, { bg: string; text: string; quote: string; aux: 
   green: { bg: '#F0FDF4', text: '#1F2937', quote: '#16A34A', aux: '#8FA79B', line: '#BBF7D0' },
 };
 
-// 字体选项：默认/黑体为系统字体零流量；宋体/楷体在部分 WebView（如 iPhone Chrome）拿不到系统宋楷，
-// 由 webfont 兜底（思源宋体/霞鹜文楷，SIL OFL 免费商用），webfont 排在回退链最前保证各端显示一致
-// 多镜像按序尝试：npmmirror（国内阿里）→ fastly.jsdelivr；均为固定版本号 URL，浏览器缓存 1 年
+// 字体选项（流量优先：unicode-range 切片按需加载，固定版本号 URL 浏览器缓存 1 年，均免费商用）：
+// - 默认：系统字体零流量
+// - 黑体：MiSans（小米手机系统字体，等线风格的现代轻黑，官方免费商用；npm misans 包切片版，
+//   在 npmmirror files API 白名单内，国内 CDN 优先）。Regular(400) + Semibold(650) 双字重，加粗用真 Semibold
+// - 宋体：思源宋体（Noto Serif SC，SIL OFL）Regular 单字重；部分 WebView（如 iPhone Chrome）拿不到系统宋体，
+//   由切片 webfont 兜底并保证各端一致；@fontsource 包在 npmmirror 白名单内
+// - 楷体：霞鹜文楷 Light（300，OFL）。此前用屏显版（Medium 基准）观感偏重，Light 同源字形更轻盈；
+//   官方 lxgw-wenkai-webfont 包在 npmmirror 白名单内
+// - 手写：小赖字体 Xiaolai SC（OFL，濑户字体简体中文改良版）单字重；官方 @chinese-fonts/xiaolai 包在 npmmirror 白名单内
+// 多镜像按序尝试：npmmirror（国内阿里）→ fastly.jsdelivr → cdn.jsdelivr
 type CssSource = string[]; // 同一份 CSS 的多个镜像地址
 type WebFont = { family: string; css: CssSource[] };
 const NPMMIRROR = 'https://registry.npmmirror.com';
 const FASTLY = 'https://fastly.jsdelivr.net/npm';
+const JSDCdn = 'https://cdn.jsdelivr.net/npm';
 const FONT_OPTS: Record<string, { label: string; stack: string; web?: WebFont }> = {
   default: { label: '默认', stack: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" },
-  hei: { label: '黑体', stack: "SimHei, 'Heiti SC', 'PingFang SC', 'Microsoft YaHei', sans-serif" },
+  hei: {
+    label: '黑体',
+    stack: "'MiSans', SimHei, 'Heiti SC', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+    web: {
+      family: 'MiSans',
+      css: [
+        [`${NPMMIRROR}/misans/5.0.0/files/lib/Normal/MiSans-Regular.min.css`, `${FASTLY}/misans@5.0.0/lib/Normal/MiSans-Regular.min.css`, `${JSDCdn}/misans@5.0.0/lib/Normal/MiSans-Regular.min.css`],
+        [`${NPMMIRROR}/misans/5.0.0/files/lib/Normal/MiSans-Semibold.min.css`, `${FASTLY}/misans@5.0.0/lib/Normal/MiSans-Semibold.min.css`, `${JSDCdn}/misans@5.0.0/lib/Normal/MiSans-Semibold.min.css`],
+      ],
+    },
+  },
   song: {
     label: '宋体',
     stack: '"Noto Serif SC", Georgia, \'Songti SC\', SimSun, serif',
@@ -42,7 +60,6 @@ const FONT_OPTS: Record<string, { label: string; stack: string; web?: WebFont }>
       family: 'Noto Serif SC',
       css: [
         [`${NPMMIRROR}/@fontsource/noto-serif-sc/5.3.1/files/400.css`, `${FASTLY}/@fontsource/noto-serif-sc@5.3.1/400.css`],
-        [`${NPMMIRROR}/@fontsource/noto-serif-sc/5.3.1/files/700.css`, `${FASTLY}/@fontsource/noto-serif-sc@5.3.1/700.css`],
       ],
     },
   },
@@ -52,8 +69,17 @@ const FONT_OPTS: Record<string, { label: string; stack: string; web?: WebFont }>
     web: {
       family: 'LXGW WenKai',
       css: [
-        [`${NPMMIRROR}/lxgw-wenkai-webfont/1.7.0/files/lxgwwenkai-regular.css`, `${FASTLY}/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-regular.css`],
-        [`${NPMMIRROR}/lxgw-wenkai-webfont/1.7.0/files/lxgwwenkai-bold.css`, `${FASTLY}/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-bold.css`],
+        [`${NPMMIRROR}/lxgw-wenkai-webfont/1.7.0/files/lxgwwenkai-light.css`, `${FASTLY}/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-light.css`],
+      ],
+    },
+  },
+  hand: {
+    label: '手写',
+    stack: '"Xiaolai SC", \'Kaiti SC\', KaiTi, STKaiti, cursive, serif',
+    web: {
+      family: 'Xiaolai SC',
+      css: [
+        [`${NPMMIRROR}/@chinese-fonts/xiaolai/3.0.0/files/dist/Xiaolai/result.css`, `${FASTLY}/@chinese-fonts/xiaolai@3.0.0/dist/Xiaolai/result.css`],
       ],
     },
   },
@@ -70,7 +96,7 @@ const PAD_OPTS: Record<string, { label: string; value: number }> = {
 // 底部日期/署名/水印固定用默认字体，不随消息字体加粗/字体选择变化
 const BASE_FONT = FONT_OPTS.default.stack;
 
-// ---------- 网络字体：仅选中宋体/楷体时加载；npmmirror 优先、fastly 兜底；固定版本号 URL 浏览器缓存 1 年 ----------
+// ---------- 网络字体：仅选中宋体/楷体/手写时加载；镜像按序尝试；固定版本号 URL 浏览器缓存 1 年 ----------
 const fontLinkInjected = new Set<string>(); // 本会话已挂过 <link> 的字体 key
 const cssCache = new Map<string, { ok: boolean; text?: string }>(); // 每个 CSS 镜像 URL 的抓取结果（失败也标记，会话内不重试死源）
 const fontBinCache = new Map<string, { ok: boolean; b64?: string }>(); // woff2 URL -> base64
@@ -151,7 +177,7 @@ function rangeCovers(range: string, cps: number[]): boolean {
   });
 }
 
-// 组装 fontEmbedCSS：只嵌入正文命中的分片（整包 10MB+ 不可接受）；无所需字重分片时退回常规字重由浏览器仿粗
+// 组装 fontEmbedCSS：只嵌入正文命中的分片（整包 10MB+ 不可接受）；无精确字重时按最接近字重嵌入（与浏览器匹配规则一致）
 async function buildFontEmbedCss(web: WebFont, content: string, bold: boolean): Promise<string> {
   const cps: number[] = [];
   for (const ch of content) {
@@ -179,7 +205,18 @@ async function buildFontEmbedCss(web: WebFont, content: string, bold: boolean): 
     }
   }
   let picked = candidates.filter((c) => c.weight === need);
-  if (picked.length === 0) picked = candidates.filter((c) => c.weight === '400' || c.weight === 'normal');
+  if (picked.length === 0 && candidates.length > 0) {
+    // 无精确字重分片（如霞鹜 Light=300、MiSans Semibold=650）：按最接近所需字重选分片，
+    // 与浏览器的字重匹配规则一致，保证导出 PNG 与预览用同一档字重
+    const w = (s: string) => {
+      const n = parseInt(s, 10);
+      return Number.isFinite(n) ? n : 400;
+    };
+    const target = w(need);
+    const dist = (c: { weight: string }) => Math.abs(w(c.weight) - target);
+    const best = Math.min(...candidates.map(dist));
+    picked = candidates.filter((c) => dist(c) === best);
+  }
   const out: string[] = [];
   for (const c of picked) {
     try {
@@ -441,7 +478,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
         }
       }
       // skipFonts：跳过 html-to-image 默认的全文档字体扫描内嵌（它会把 Tailwind 等所有 CSS 里的字体都抓一遍，非常慢）；
-      // 系统字体无需内嵌，宋体/楷体由上面的 fontEmbedCss 精确嵌入，两者互不影响
+      // 系统字体无需内嵌，宋体/楷体/手写由上面的 fontEmbedCss 精确嵌入，两者互不影响
       const url = await toPng(cardRef.current, { pixelRatio: 2, fontEmbedCSS: fontEmbedCss, skipFonts: true });
       if (isMobile()) {
         // 移动端 a[download] 不可靠：在弹窗内展示图片，引导长按保存
