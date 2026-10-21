@@ -1,11 +1,12 @@
 import { useState, KeyboardEvent, useRef, useEffect } from 'react';
-import { Send, Paperclip, Smile, Image as ImageIcon, X, Loader2, CornerUpLeft, AtSign, Archive, Plus, FileText } from 'lucide-react';
+import { Send, Paperclip, Smile, Image as ImageIcon, X, Loader2, CornerUpLeft, AtSign, Archive, Plus, FileText, Crop } from 'lucide-react';
 import {
   IMAGE_MAX_WIDTH,
   IMAGE_QUALITY,
   IMAGE_COMPRESS_THRESHOLD_KB,
 } from '../config';
 import { ChatMessage, GroupMember } from '../api/types';
+import { ImageCropModal } from './ImageCropModal';
 
 interface Props {
   groupId: number;
@@ -132,6 +133,8 @@ export const InputBox = ({
   const [error, setError] = useState('');
   // 待发送的图片/文件预览（用户确认后才发送）
   const [pending, setPending] = useState<PendingAttachment | null>(null);
+  // 图片裁剪弹窗（普通图片发送前可自由框选，去掉不需要的部分）
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
   // 移动端：三个入口按钮合并为一个加号
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [showPlus, setShowPlus] = useState(false);
@@ -370,6 +373,19 @@ export const InputBox = ({
             </p>
             <p className="text-xs text-gray-400">{humanSize(pending.size)}</p>
           </div>
+          {pending.kind === 'image' && pending.url && !/\.gif$/i.test(pending.filename) && (
+            <button
+              onClick={() => setCropSrc(pending.url)}
+              disabled={sending}
+              className={`flex-shrink-0 px-2.5 py-1.5 text-sm rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1 ${
+                isDarkMode ? 'text-gray-200 hover:bg-gray-600' : 'text-gray-700 hover:bg-gray-200'
+              }`}
+              title="裁剪图片"
+            >
+              <Crop className="w-4 h-4" />
+              裁剪
+            </button>
+          )}
           <button
             onClick={() => setPending(null)}
             disabled={sending}
@@ -618,6 +634,19 @@ export const InputBox = ({
           <Send className="w-5 h-5" />
         </button>
       </div>
+
+      {cropSrc && pending && (
+        <ImageCropModal
+          src={cropSrc}
+          filename={pending.filename}
+          isDarkMode={isDarkMode}
+          onClose={() => setCropSrc(null)}
+          onDone={(blob, filename) => {
+            setPending({ blob, filename, kind: 'image', size: blob.size, url: URL.createObjectURL(blob) });
+            setCropSrc(null);
+          }}
+        />
+      )}
     </div>
   );
 };

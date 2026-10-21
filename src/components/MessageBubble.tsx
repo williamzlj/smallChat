@@ -310,7 +310,7 @@ export const MessageBubble = ({
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [selMode, setSelMode] = useState(false); // 文本选择模式（长按/右键菜单与拖动选择冲突，故单独开启）
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 });
-  const [expanded, setExpanded] = useState(false); // 长文本展开（超过 240 字默认折叠）
+  const [expanded, setExpanded] = useState(false); // 长文本展开（超过 200 字默认折叠）
   const [reEditVisible, setReEditVisible] = useState(true); // 「重新编辑」链接是否还在展示期
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
@@ -470,8 +470,8 @@ export const MessageBubble = ({
     }
   })();
 
-  // 长文本（超过 240 字）默认折叠 6 行，避免一条消息占满整个屏幕
-  const isLongText = message.type === 'text' && message.content.length > 240;
+  // 长文本（超过 200 字）默认折叠 6 行，避免一条消息占满整个屏幕
+  const isLongText = message.type === 'text' && message.content.length > 200;
 
   const menuBtn = `w-full flex items-center space-x-2 px-3 py-2 text-sm ${
     isDarkMode ? 'text-gray-200 hover:bg-gray-600' : 'text-gray-700 hover:bg-gray-100'
@@ -685,7 +685,7 @@ export const MessageBubble = ({
               </div>
             )}
 
-            {/* 文本（超过 240 字默认折叠 6 行，点击展开全文） */}
+            {/* 文本（超过 200 字默认折叠 6 行，点击展开全文） */}
             {message.type === 'text' && message.content && (
               <>
                 <p

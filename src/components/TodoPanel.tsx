@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Loader2, Inbox, Menu, X, Download, Copy, Archive } from 'lucide-react';
+import { Loader2, Inbox, Menu, X, Download, Copy, Archive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
 import { CrossGroupMessage, GroupRole } from '../api/types';
-import { usePanelMenu, PanelItem, msgLine, msgText, PanelAction } from './PanelShared';
+import { usePanelMenu, PanelItem, msgLine, msgText, PanelAction, isOverdueTodo } from './PanelShared';
 import { DueEditor } from './DueEditor';
 import { ContextModal } from './ContextModal';
 
@@ -19,7 +19,14 @@ interface Props {
   onDelegate: (groupId: number, summary: string, kind: 'todo' | 'important') => void;
 }
 
-type Tab = 'pending' | 'done' | 'dueFuture' | 'duePast';
+type Tab = 'pending' | 'done' | 'dueFuture' | 'duePast' | 'calendar';
+
+// 月历视图用：本地日期串（YYYY-MM-DD）与星期名
+const fmtDate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const todayStr = fmtDate(new Date());
+const WEEKDAY = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const weekdayOf = (date: string) => WEEKDAY[new Date(`${date}T00:00:00`).getDay()];
 
 // 跨群待办面板：未完成 / 已完成，支持归档过滤、右键操作、多选合并复制
 export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sidebarOpen, roleOf, onDelegate }: Props) => {
@@ -37,6 +44,11 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
   const [noteDraft, setNoteDraft] = useState('');
   // 上下文弹窗
   const [contextMsg, setContextMsg] = useState<CrossGroupMessage | null>(null);
+  // 月历视图：月份、选中日期、列表/月历切换、窄屏判定（手机只显示圆点）
+  const [calMonth, setCalMonth] = useState(todayStr.slice(0, 7));
+  const [calDate, setCalDate] = useState(todayStr);
+  const [calMode, setCalMode] = useState<'month' | 'list'>('month');
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 639px)').matches);
 
   const load = async () => {
     setLoading(true);
@@ -52,6 +64,14 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
 
   useEffect(() => {
     void load();
+  }, []);
+
+  // 窄屏（手机）不显示提醒文字，只显示颜色圆点
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const onChange = () => setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
   }, []);
 
   const handleAction = async (action: PanelAction, msg: CrossGroupMessage) => {
@@ -148,6 +168,307 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
   const shown = isDueTab
     ? [...filtered].sort((a, b) => (b.due_at ?? '').localeCompare(a.due_at ?? ''))
     : filtered;
+
+  // ---- 月历 / 按日期分组列表：只收录设了提醒的待办（含已完成，跟随归档开关） ----
+  const auxSize = Math.max(fontSize - 6, 14);
+  const contentSize = Math.max(fontSize - 4, 14);
+  const reminderMsgs = messages.filter((m) => (showArchived || m.todo_archived === 0) && m.due_at);
+  const dayMap = new Map<string, CrossGroupMessage[]>();
+  reminderMsgs.forEach((m) => {
+    const key = (m.due_at as string).slice(0, 10);
+    const list = dayMap.get(key);
+    if (list) list.push(m);
+    else dayMap.set(key, [m]);
+  });
+  // 列表视图按提醒日期降序分组，组内按当天时间升序
+  const dateGroups = Array.from(dayMap.entries())
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(
+      ([date, list]) =>
+        [date, [...list].sort((a, b) => (a.due_at ?? '').localeCompare(b.due_at ?? ''))] as [string, CrossGroupMessage[]],
+    );
+
+  const dueStateOf = (m: CrossGroupMessage): 'done' | 'overdue' | 'today' | 'upcoming' => {
+    if (m.todo_status === 2) return 'done';
+    if (isOverdueTodo(m.due_at, m.todo_status)) return 'overdue';
+    return (m.due_at ?? '').slice(0, 10) === todayStr ? 'today' : 'upcoming';
+  };
+  // 颜色圆点：红=已到期、绿=今天、灰=未到期、空心绿=已完成（与页签配色一致）
+  const dueDotCls = (m: CrossGroupMessage) => {
+    const st = dueStateOf(m);
+    if (st === 'done') return 'border border-green-500 bg-transparent';
+    if (st === 'overdue') return 'bg-red-500';
+    if (st === 'today') return 'bg-green-500';
+    return isDarkMode ? 'bg-gray-500' : 'bg-gray-400';
+  };
+
+  const shiftCalMonth = (delta: number) => {
+    const [y, m] = calMonth.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    setCalMonth(next);
+    setCalDate(next === todayStr.slice(0, 7) ? todayStr : `${next}-01`);
+  };
+
+  // 单条提醒（月历下方当日清单 / 列表视图共用）
+  const reminderRow = (m: CrossGroupMessage) => {
+    const st = dueStateOf(m);
+    const tagText = st === 'done' ? '已完成' : st === 'overdue' ? '已到期' : st === 'today' ? '今天' : '未到期';
+    const tagCls =
+      st === 'done' || st === 'today'
+        ? 'text-green-600 dark:text-green-400'
+        : st === 'overdue'
+          ? 'text-red-600 dark:text-red-400'
+          : isDarkMode
+            ? 'text-gray-400'
+            : 'text-gray-500';
+    return (
+      <div
+        key={m.id}
+        onClick={() => onJump(m.group_id, m.id)}
+        onContextMenu={(e) => openMenu(e, m)}
+        className={`flex items-start gap-2 px-2.5 py-2 rounded-lg cursor-pointer ${
+          isDarkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'
+        }`}
+      >
+        <span
+          className={`font-mono flex-shrink-0 leading-6 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
+          style={{ fontSize: `${auxSize}px` }}
+        >
+          {(m.due_at ?? '').slice(11, 16)}
+        </span>
+        <div className="flex-1 min-w-0">
+          <p
+            className={`break-words line-clamp-2 ${
+              st === 'done' ? 'line-through text-gray-400' : isDarkMode ? 'text-gray-100' : 'text-gray-700'
+            }`}
+            style={{ fontSize: `${contentSize}px` }}
+          >
+            {msgText(m)}
+          </p>
+          <p className="text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap" style={{ fontSize: `${auxSize}px` }}>
+            <span className="truncate">「{m.group_name}」</span>
+            <span
+              className={`flex-shrink-0 ${
+                st === 'overdue' ? 'px-1.5 py-0.5 rounded text-sm font-medium bg-red-500 text-white' : tagCls
+              }`}
+            >
+              {tagText}
+            </span>
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+  const renderCalendar = () => {
+    const [cy, cm] = calMonth.split('-').map(Number);
+    const monthItems = reminderMsgs.filter((m) => (m.due_at as string).startsWith(calMonth));
+    const first = new Date(cy, cm - 1, 1);
+    const offset = (first.getDay() + 6) % 7; // 周一为一周开始
+    const daysInMonth = new Date(cy, cm, 0).getDate();
+    const total = Math.ceil((offset + daysInMonth) / 7) * 7;
+    const selectedItems = [...(dayMap.get(calDate) ?? [])].sort((a, b) =>
+      (a.due_at ?? '').localeCompare(b.due_at ?? ''),
+    );
+    const navBtn = `p-1 rounded-lg ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`;
+    const segBtn = (active: boolean) =>
+      `px-2.5 py-1 text-sm rounded-md transition-colors ${
+        active
+          ? isDarkMode
+            ? 'bg-gray-800 text-white'
+            : 'bg-white text-gray-800 shadow-sm'
+          : isDarkMode
+            ? 'text-gray-400'
+            : 'text-gray-500'
+      }`;
+
+    const cell = (i: number) => {
+      const d = new Date(cy, cm - 1, 1 - offset + i);
+      const key = fmtDate(d);
+      const inMonth = d.getMonth() === cm - 1;
+      const items = dayMap.get(key) ?? [];
+      const isToday = key === todayStr;
+      const isSel = key === calDate;
+      return (
+        <button
+          key={key}
+          type="button"
+          onClick={() => setCalDate(key)}
+          className={`flex flex-col items-start gap-0.5 rounded-lg border p-1 overflow-hidden text-left ${
+            isSel
+              ? 'ring-2 ring-green-500 border-transparent'
+              : isToday
+                ? 'border-green-500'
+                : isDarkMode
+                  ? 'border-gray-700'
+                  : 'border-gray-200'
+          } ${inMonth ? (isDarkMode ? 'bg-gray-800' : 'bg-white') : 'opacity-40'}`}
+          style={{ minHeight: isMobile ? 52 : 78 }}
+        >
+          <span
+            className={`flex items-center justify-center font-bold ${
+              isToday
+                ? 'w-5 h-5 rounded-full bg-green-500 text-white'
+                : isDarkMode
+                  ? 'text-gray-300'
+                  : 'text-gray-600'
+            }`}
+            style={{ fontSize: `${auxSize}px` }}
+          >
+            {d.getDate()}
+          </span>
+          {isMobile ? (
+            items.length > 0 && (
+              <span className="flex flex-wrap items-center gap-0.5">
+                {items.slice(0, 4).map((m) => (
+                  <span key={m.id} className={`w-1.5 h-1.5 rounded-full ${dueDotCls(m)}`} />
+                ))}
+                {items.length > 4 && <span className="text-xs text-gray-400">+{items.length - 4}</span>}
+              </span>
+            )
+          ) : (
+            <>
+              {items.slice(0, 2).map((m) => (
+                <span key={m.id} className="flex items-center gap-1 min-w-0 w-full">
+                  <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dueDotCls(m)}`} />
+                  <span
+                    className={`truncate ${
+                      dueStateOf(m) === 'done'
+                        ? 'line-through text-gray-400'
+                        : isDarkMode
+                          ? 'text-gray-300'
+                          : 'text-gray-600'
+                    }`}
+                    style={{ fontSize: '12px' }}
+                  >
+                    {msgText(m)}
+                  </span>
+                </span>
+              ))}
+              {items.length > 2 && <span className="text-xs text-gray-400">+{items.length - 2}</span>}
+            </>
+          )}
+        </button>
+      );
+    };
+
+    return (
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`text-base font-medium ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+              {cy}年{cm}月
+            </span>
+            <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              {monthItems.length} 条提醒
+            </span>
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {calMode === 'month' && (
+              <>
+                <button onClick={() => shiftCalMonth(-1)} className={navBtn} title="上个月">
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    setCalMonth(todayStr.slice(0, 7));
+                    setCalDate(todayStr);
+                  }}
+                  className={`px-2 py-1 text-sm rounded-lg ${
+                    isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  今天
+                </button>
+                <button onClick={() => shiftCalMonth(1)} className={navBtn} title="下个月">
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </>
+            )}
+            <div className={`flex gap-0.5 rounded-lg p-0.5 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
+              <button onClick={() => setCalMode('list')} className={segBtn(calMode === 'list')}>
+                列表
+              </button>
+              <button onClick={() => setCalMode('month')} className={segBtn(calMode === 'month')}>
+                月历
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {calMode === 'list' ? (
+          dateGroups.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+              <Inbox className="w-12 h-12 mb-2" />
+              <p className="text-sm">没有设置提醒的事项</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {dateGroups.map(([date, list]) => (
+                <div key={date}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`text-sm font-bold ${isDarkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                      {date} {weekdayOf(date)}
+                    </span>
+                    {date === todayStr && (
+                      <span className="px-1.5 py-0.5 rounded text-xs bg-green-500 text-white">今天</span>
+                    )}
+                    <span className="text-sm text-gray-400">{list.length} 条提醒</span>
+                  </div>
+                  <div className="space-y-1.5">{list.map(reminderRow)}</div>
+                </div>
+              ))}
+            </div>
+          )
+        ) : (
+          <>
+            <div className="grid grid-cols-7 gap-1 mb-1">
+              {['一', '二', '三', '四', '五', '六', '日'].map((w) => (
+                <div key={w} className="text-center text-sm text-gray-400 py-0.5">
+                  {w}
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {Array.from({ length: total }, (_, i) => cell(i))}
+            </div>
+            <div className="flex items-center gap-3 flex-wrap mt-2 text-sm text-gray-400">
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                已到期
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                今天
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                未到期
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full border border-green-500" />
+                已完成
+              </span>
+            </div>
+            <div className={`mt-3 rounded-xl p-3 ${isDarkMode ? 'bg-gray-700/60' : 'bg-white'}`}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`text-sm font-bold ${isDarkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                  {calDate} {weekdayOf(calDate)}
+                </span>
+                <span className="text-sm text-gray-400">{selectedItems.length} 条提醒</span>
+              </div>
+              {selectedItems.length === 0 ? (
+                <p className="text-sm text-gray-400 py-1">这天没有设置提醒</p>
+              ) : (
+                <div className="space-y-1.5">{selectedItems.map(reminderRow)}</div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
 
   const toggleSelect = (id: number) => {
     setSelected((prev) => {
@@ -291,6 +612,16 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
           已到期提醒
         </button>
         <button
+          onClick={() => setTab('calendar')}
+          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+            tab === 'calendar'
+              ? 'bg-indigo-500 text-white'
+              : isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-white text-gray-600'
+          }`}
+        >
+          月历
+        </button>
+        <button
           onClick={() => setShowArchived(!showArchived)}
           className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${
             showArchived
@@ -327,6 +658,8 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
           <div className="flex flex-col items-center justify-center py-10">
             <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
           </div>
+        ) : tab === 'calendar' ? (
+          renderCalendar()
         ) : shown.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400">
             <Inbox className="w-12 h-12 mb-2" />
