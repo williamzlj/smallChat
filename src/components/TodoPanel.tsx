@@ -87,7 +87,8 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
         return;
       } else if (action.type === 'normal') {
         await api.messagesSetTodo(msg.id, 0);
-        setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, todo_status: 0 } : m)));
+        // 与后端一致：转普通消息时同时清掉到点提醒，否则提醒/月历页签里仍会残留该条
+        setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, todo_status: 0, due_at: null } : m)));
         return;
       } else if (action.type === 'setDue') {
         setDueEdit(msg);
@@ -233,7 +234,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
       >
         <span
           className={`font-mono flex-shrink-0 leading-6 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
-          style={{ fontSize: `${auxSize}px` }}
+          style={{ fontSize: `${contentSize}px` }}
         >
           {(m.due_at ?? '').slice(11, 16)}
         </span>
