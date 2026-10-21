@@ -249,6 +249,43 @@ const loadStyle = (): {
 
 const isMobile = () => /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
+// 「修改文本」小弹窗的目标字段（nick 仅多消息卡片出现）
+type TextEditTarget = 'sig' | 'date' | 'title' | 'body' | 'nick';
+const TEXT_EDIT_TITLES: Record<TextEditTarget, string> = {
+  sig: '修改署名',
+  date: '修改日期',
+  title: '修改标题',
+  body: '修改正文',
+  nick: '修改昵称',
+};
+
+// 自动高度文本框：随内容撑高——长段落没有换行符时按行数估算不准，直接量 scrollHeight 才可靠；
+// 封顶约半屏，超出框内滚动。定义在 ShareCardModal 外：组件内定义会导致每次渲染都是新组件类型，输入中被卸载重建、丢焦点
+const AutoTextarea = ({
+  value,
+  onChange,
+  className,
+  autoFocus,
+  placeholder,
+}: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  className?: string;
+  autoFocus?: boolean;
+  placeholder?: string;
+}) => {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.5))}px`;
+  }, [value]);
+  return (
+    <textarea ref={ref} value={value} onChange={onChange} rows={3} autoFocus={autoFocus} placeholder={placeholder} className={className} />
+  );
+};
+
 export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }: Props) => {
   const [theme, setTheme] = useState<CardTheme>(() => loadStyle().theme);
   const [style, setStyle] = useState(() => {
@@ -259,10 +296,16 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
   });
   // 卡片签名仅存浏览器：本地没有时以服务器值（cardSignature prop）为初始值做一次性迁移，老用户无感；留空则卡片不显示署名
   const [signature, setSignature] = useState<string>(() => loadStyle().signature ?? cardSignature);
-  const [sigOpen, setSigOpen] = useState(false); // 签名输入框展开态
   // 卡片标题仅存浏览器（与署名同模式），顶部居中显示；留空则不显示
   const [title, setTitle] = useState<string>(() => loadStyle().title ?? '');
-  const [titleOpen, setTitleOpen] = useState(false); // 标题输入框展开态
+  // 「修改文本」独立小弹窗：当前打开哪一个（null=都不开）
+  const [textEdit, setTextEdit] = useState<TextEditTarget | null>(null);
+  // 日期覆写：仅本次打开生效（进 localStorage 会串到别的消息的卡片上），留空用消息默认日期
+  const [dateOverride, setDateOverride] = useState('');
+  // 正文覆写（msgId -> 修改后文字）：仅本次打开生效，用于改标点/换行/错别字，不动服务器原消息
+  const [contentEdits, setContentEdits] = useState<Record<number, string>>({});
+  // 昵称覆写（原昵称 -> 显示昵称）：仅本次打开生效，多消息卡片制作时临时缩短/隐藏昵称，不改群资料
+  const [nickEdits, setNickEdits] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [imgUrl, setImgUrl] = useState(''); // 移动端生成结果（长按保存）
@@ -279,22 +322,30 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
   const isMulti = messages.length > 1;
   const date = messages[0].created_at.slice(0, 10);
   const lastDate = messages[messages.length - 1].created_at.slice(0, 10);
-  // 跨天的多消息卡片显示日期区间
-  const dateLabel = date === lastDate ? date : `${date} ~ ${lastDate}`;
+  // 跨天的多消息卡片显示日期区间；「修改文本」里改过日期则以覆写为准
+  const defaultDateLabel = date === lastDate ? date : `${date} ~ ${lastDate}`;
+  const dateLabel = dateOverride.trim() || defaultDateLabel;
   const fileName = `smallChat-card-${date.replace(/-/g, '')}.png`;
+  // 卡片正文以「修改文本」里的覆写为准（未改的消息用原文）
+  const contentOf = (m: ChatMessage) => contentEdits[m.id] ?? m.content;
+  // 昵称以「修改昵称」里的覆写为准（未改的用原昵称）；仅多消息卡片用
+  const nickOf = (m: ChatMessage) => nickEdits[m.nickname] ?? m.nickname;
   // 全部文字内容（字体分片内嵌、复制文字共用）
-  const fullText = messages.map((m) => m.content).join('\n');
+  const fullText = messages.map(contentOf).join('\n');
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      // 修改文本小弹窗开着时，Esc 只关它，不连带关整个卡片弹窗
+      if (textEdit) setTextEdit(null);
+      else onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       window.clearTimeout(copyTimer.current);
     };
-  }, [onClose]);
+  }, [onClose, textEdit]);
 
   // 选中（或恢复已保存的）webfont 字体时挂样式表，浏览器按 unicode-range 只下载用到的分片
   useEffect(() => {
@@ -341,8 +392,8 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
     }
   }, [style, theme, signature, title]);
 
-  // 外观变化后，之前生成的图片作废
-  useEffect(() => setImgUrl(''), [theme, style, signature, title]);
+  // 外观/文本变化后，之前生成的图片作废
+  useEffect(() => setImgUrl(''), [theme, style, signature, title, dateOverride, contentEdits, nickEdits]);
 
   const save = async () => {
     if (!cardRef.current) return;
@@ -380,16 +431,16 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
   };
 
   // 复制正文到剪贴板（发朋友圈时配文用）；成功按钮短暂变「已复制」，不用弹窗打断
-  // 多消息卡片复制为「昵称：内容」逐行文本（与合并复制格式一致）
+  // 多消息卡片复制为「昵称：内容」逐行文本（与合并复制格式一致）；文字以「修改文本」覆写为准
   const copyPayload = isMulti
     ? messages
         .map((m) => {
           const body =
-            m.type === 'image' ? '[图片]' : m.type === 'file' ? `[文件] ${m.file?.name ?? ''}` : m.content;
-          return `${m.nickname}：${body}`;
+            m.type === 'image' ? '[图片]' : m.type === 'file' ? `[文件] ${m.file?.name ?? ''}` : contentOf(m);
+          return `${nickOf(m)}：${body}`;
         })
         .join('\n')
-    : messages[0].content;
+    : contentOf(messages[0]);
   const copyText = async () => {
     const done = () => {
       setCopied(true);
@@ -475,12 +526,82 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
 
   const auxSize = Math.max(12, Math.round(style.fontSize * 0.8)); // 日期/署名/水印随正文字号联动
 
-  return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70] p-4" onClick={onClose}>
-      <div
-        className={`rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}
-        onClick={(e) => e.stopPropagation()}
+  // 「修改文本」入口按钮（署名/日期/标题/正文/昵称共用样式，每个打开自己的小弹窗）
+  const textEditBtn = (target: TextEditTarget, label: string) => (
+    <button
+      key={target}
+      onClick={() => setTextEdit(target)}
+      className={`px-2 py-0.5 text-sm rounded-lg transition-colors ${
+        isDarkMode
+          ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  // ---------- 「修改文本」弹窗共用 ----------
+  const editInputCls = `w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none focus:ring-2 focus:ring-green-500 ${
+    isDarkMode
+      ? 'bg-gray-700 border-gray-600 text-gray-200 placeholder-gray-500'
+      : 'bg-white border-gray-300 text-gray-700 placeholder-gray-400'
+  }`;
+  // 输入框清空按钮：框内有文字时才出现，点一下清空
+  const clearBtn = (value: string, onClear: () => void) =>
+    value ? (
+      <button
+        onClick={onClear}
+        title="清空"
+        className={`absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded ${
+          isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'
+        }`}
       >
+        <X className="w-4 h-4" />
+      </button>
+    ) : null;
+
+  // 字段标签行：左侧字段名，右侧「还原」（仅在有覆写时出现，单独恢复默认）
+  const editLabelRow = (label: string, overridden: boolean, onReset: () => void) => (
+    <div className="flex items-center justify-between mb-1">
+      <span className={`min-w-0 truncate text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`} title={label}>
+        {label}
+      </span>
+      {overridden && (
+        <button
+          onClick={onReset}
+          className={`text-xs ${isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
+        >
+          还原
+        </button>
+      )}
+    </div>
+  );
+  const setContentEdit = (id: number, value: string, original: string) =>
+    setContentEdits((prev) => {
+      const next = { ...prev };
+      if (value === original) delete next[id]; // 改回原文则清除覆写，避免脏数据越攒越多
+      else next[id] = value;
+      return next;
+    });
+  const textMsgs = messages.filter((m) => m.type === 'text'); // 多消息卡片里仅文字消息可改正文
+  // 「修改昵称」用：卡片里出现的去重昵称列表（保持消息中的出现顺序）
+  const uniqueNicks = Array.from(new Set(messages.map((m) => m.nickname)));
+  const setNickEdit = (orig: string, value: string) =>
+    setNickEdits((prev) => {
+      const next = { ...prev };
+      if (value === orig) delete next[orig]; // 改回原昵称则清除覆写
+      else next[orig] = value;
+      return next;
+    });
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70] p-4" onClick={onClose}>
+        <div
+          className={`rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}
+          onClick={(e) => e.stopPropagation()}
+        >
         <div className={`flex items-center justify-between p-4 border-b flex-shrink-0 ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
           <h3 className={`text-base font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>生成分享卡片</h3>
           <button
@@ -545,93 +666,16 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                 optBtn(style.padKey === key, () => setStyle((s) => ({ ...s, padKey: key })), o.label),
               ),
             )}
-            {/* 卡片标题：仅存浏览器，20 字以内，留空不显示；顶部居中，字号颜色与双引号一致 */}
+            {/* 修改：署名/日期/标题/正文/昵称（昵称仅多消息卡片）各自独立小弹窗，改哪项点哪项 */}
             {settingRow(
-              '标题',
-              titleOpen ? (
-                <input
-                  autoFocus
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  onBlur={() => setTitleOpen(false)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') setTitleOpen(false);
-                  }}
-                  maxLength={20}
-                  placeholder="留空则不显示标题"
-                  className={`flex-1 min-w-[140px] px-2.5 py-1 text-sm rounded-lg border outline-none focus:ring-2 focus:ring-green-500 ${
-                    isDarkMode
-                      ? 'bg-gray-700 border-gray-600 text-gray-200 placeholder-gray-500'
-                      : 'bg-white border-gray-300 text-gray-700 placeholder-gray-400'
-                  }`}
-                />
-              ) : (
-                <>
-                  <button
-                    onClick={() => setTitleOpen(true)}
-                    className={`px-2 py-0.5 text-sm rounded-lg transition-colors ${
-                      isDarkMode
-                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {title ? '修改卡片标题' : '设置卡片标题'}
-                  </button>
-                  {title && (
-                    <span
-                      className={`text-sm truncate max-w-[140px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
-                      title={title}
-                    >
-                      {title}
-                    </span>
-                  )}
-                </>
-              ),
-            )}
-            {/* 卡片签名：仅存浏览器，20 字以内，留空不显示署名 */}
-            {settingRow(
-              '署名',
-              sigOpen ? (
-                <input
-                  autoFocus
-                  type="text"
-                  value={signature}
-                  onChange={(e) => setSignature(e.target.value)}
-                  onBlur={() => setSigOpen(false)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') setSigOpen(false);
-                  }}
-                  maxLength={20}
-                  placeholder="留空则不显示署名"
-                  className={`flex-1 min-w-[140px] px-2.5 py-1 text-sm rounded-lg border outline-none focus:ring-2 focus:ring-green-500 ${
-                    isDarkMode
-                      ? 'bg-gray-700 border-gray-600 text-gray-200 placeholder-gray-500'
-                      : 'bg-white border-gray-300 text-gray-700 placeholder-gray-400'
-                  }`}
-                />
-              ) : (
-                <>
-                  <button
-                    onClick={() => setSigOpen(true)}
-                    className={`px-2 py-0.5 text-sm rounded-lg transition-colors ${
-                      isDarkMode
-                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {signature ? '修改卡片签名' : '设置卡片签名'}
-                  </button>
-                  {signature && (
-                    <span
-                      className={`text-sm truncate max-w-[140px] ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
-                      title={signature}
-                    >
-                      {signature}
-                    </span>
-                  )}
-                </>
-              ),
+              '修改',
+              <>
+                {textEditBtn('sig', '署名')}
+                {textEditBtn('date', '日期')}
+                {textEditBtn('title', '标题')}
+                {textEditBtn('body', '正文')}
+                {isMulti && textEditBtn('nick', '昵称')}
+              </>,
             )}
             {/* 日期/署名显示开关：控制卡片预览与导出图，默认都显示，记入浏览器本地 */}
             {settingRow(
@@ -690,10 +734,10 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                     <div style={{ marginTop: 10 }}>
                       {messages.map((m, i) => (
                         <div key={m.id} style={{ marginTop: i === 0 ? 0 : 16 }}>
-                          {/* 昵称行：可用「显示-昵称」开关隐藏（多消息卡片） */}
-                          {style.showNickname && (
+                          {/* 昵称行：可用「显示-昵称」开关隐藏（多消息卡片）；「修改昵称」清空后该行也不显示 */}
+                          {style.showNickname && nickOf(m).trim() !== '' && (
                             <div style={{ color: m.color || t.aux, fontSize: auxSize, fontFamily: BASE_FONT, lineHeight: 1.4 }}>
-                              {m.nickname}
+                              {nickOf(m)}
                             </div>
                           )}
                           {m.type === 'image' && m.file ? (
@@ -722,7 +766,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                                 } as React.CSSProperties
                               }
                             >
-                              {m.type === 'text' ? m.content : `[文件] ${m.file?.name ?? ''}`}
+                              {m.type === 'text' ? contentOf(m) : `[文件] ${m.file?.name ?? ''}`}
                             </p>
                           )}
                         </div>
@@ -746,7 +790,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                         } as React.CSSProperties
                       }
                     >
-                      {messages[0].content}
+                      {contentOf(messages[0])}
                     </p>
                   )}
                   {(style.showDate || style.showSignature) && (
@@ -830,6 +874,175 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
           </div>
         </div>
       </div>
-    </div>
+      </div>
+
+      {/* 「修改文本」小弹窗：署名/日期/标题/正文各自独立一个，点哪个按钮开哪个。
+          标题/署名仍记 localStorage（全局卡片样式）；日期/正文覆写只对当前这张卡片生效，
+          关掉卡片弹窗即失效，避免串到别的消息上。内容实时生效，「完成」/背景点击/Esc 仅关闭本弹窗 */}
+      {textEdit && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80] p-4"
+          onClick={() => setTextEdit(null)}
+        >
+          <div
+            className={`rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={`flex items-center justify-between p-4 border-b flex-shrink-0 ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+              <h3 className={`text-base font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                {TEXT_EDIT_TITLES[textEdit]}
+              </h3>
+              <button
+                onClick={() => setTextEdit(null)}
+                className={`p-1.5 rounded-lg ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-400 hover:bg-gray-100'}`}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto">
+              {/* 署名：记 localStorage，20 字以内，留空不显示署名；有文字时右侧出现清空按钮 */}
+              {textEdit === 'sig' && (
+                <div className="relative">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={signature}
+                    onChange={(e) => setSignature(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') setTextEdit(null);
+                    }}
+                    maxLength={20}
+                    placeholder="留空则不显示署名"
+                    className={`${editInputCls} pr-8`}
+                  />
+                  {clearBtn(signature, () => setSignature(''))}
+                </div>
+              )}
+
+              {/* 日期：仅本次生效；改过可出现「还原」恢复消息默认日期 */}
+              {textEdit === 'date' && (
+                <div>
+                  {editLabelRow('卡片日期', dateOverride.trim() !== '', () => setDateOverride(''))}
+                  <input
+                    autoFocus
+                    type="text"
+                    value={dateOverride}
+                    onChange={(e) => setDateOverride(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') setTextEdit(null);
+                    }}
+                    maxLength={30}
+                    placeholder={`留空则使用消息日期（${defaultDateLabel}）`}
+                    className={editInputCls}
+                  />
+                </div>
+              )}
+
+              {/* 标题：记 localStorage，20 字以内，留空不显示标题；有文字时右侧出现清空按钮 */}
+              {textEdit === 'title' && (
+                <div className="relative">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') setTextEdit(null);
+                    }}
+                    maxLength={20}
+                    placeholder="留空则不显示标题"
+                    className={`${editInputCls} pr-8`}
+                  />
+                  {clearBtn(title, () => setTitle(''))}
+                </div>
+              )}
+
+              {/* 正文：单消息一个输入框；多消息按消息逐个改（图片/文件消息没有可改文字，不列出） */}
+              {textEdit === 'body' &&
+                (isMulti ? (
+                  textMsgs.length > 0 ? (
+                    <div className="space-y-3">
+                      {textMsgs.map((m) => (
+                        <div key={m.id}>
+                          {editLabelRow(m.nickname, contentEdits[m.id] !== undefined, () =>
+                            setContentEdits((prev) => {
+                              const next = { ...prev };
+                              delete next[m.id];
+                              return next;
+                            }),
+                          )}
+                          <AutoTextarea
+                            autoFocus={m.id === textMsgs[0].id}
+                            value={contentOf(m)}
+                            onChange={(e) => setContentEdit(m.id, e.target.value, m.content)}
+                            className={`${editInputCls} resize-y whitespace-pre-wrap`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>没有可修改的文字消息</p>
+                  )
+                ) : (
+                  <div>
+                    {editLabelRow('卡片正文', contentEdits[messages[0].id] !== undefined, () =>
+                      setContentEdits((prev) => {
+                        const next = { ...prev };
+                        delete next[messages[0].id];
+                        return next;
+                      }),
+                    )}
+                    <AutoTextarea
+                      autoFocus
+                      value={contentOf(messages[0])}
+                      onChange={(e) => setContentEdit(messages[0].id, e.target.value, messages[0].content)}
+                      className={`${editInputCls} resize-y whitespace-pre-wrap`}
+                    />
+                  </div>
+                ))}
+
+              {/* 昵称（仅多消息卡片有此入口）：按去重后的原昵称逐个改显示名，留空则卡片上不显示该昵称 */}
+              {textEdit === 'nick' && (
+                <div className="space-y-3">
+                  {uniqueNicks.map((nick) => (
+                    <div key={nick}>
+                      {editLabelRow(nick, nickEdits[nick] !== undefined, () =>
+                        setNickEdits((prev) => {
+                          const next = { ...prev };
+                          delete next[nick];
+                          return next;
+                        }),
+                      )}
+                      <input
+                        autoFocus={nick === uniqueNicks[0]}
+                        type="text"
+                        value={nickEdits[nick] ?? nick}
+                        onChange={(e) => setNickEdit(nick, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') setTextEdit(null);
+                        }}
+                        maxLength={20}
+                        placeholder="留空则卡片上不显示该昵称"
+                        className={editInputCls}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className={`p-4 border-t flex-shrink-0 ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+              <button
+                onClick={() => setTextEdit(null)}
+                className="w-full py-2.5 rounded-xl text-sm font-medium bg-green-500 text-white hover:bg-green-600 transition-colors"
+              >
+                完成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };

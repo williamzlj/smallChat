@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Wallet, X, Loader2, RefreshCw, Inbox, Trash2, Plus, Settings2, ChevronLeft, ChevronRight, Calendar,
+  Wallet, X, Loader2, RefreshCw, Inbox, Trash2, Plus, Settings2, ChevronLeft, ChevronRight, Calendar, Download,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { Category, LedgerData, LedgerDetail, LedgerDetailRow, LedgerMonthRow } from '../api/types';
@@ -83,12 +83,13 @@ const amountCls = (kind: number, cents: number, isDarkMode: boolean) => {
 const rowPreview = (r: LedgerDetailRow) =>
   r.type === 'image' ? '[图片]' : r.type === 'file' ? '[文件]' : r.type === 'forward' ? '[合并转发]' : r.content;
 
-// 下钻目标：分类明细（kind + category + 当前范围）或某月明细（month）
+// 下钻目标：分类明细（kind + category + 当前范围）、某月明细（month）或某人明细（userId）
 interface DetailTarget {
   title: string;
   kind: 0 | 1 | 2;
   category: string | null; // null=不限分类
   month?: string; // 指定月份（优先于当前范围）
+  userId?: number; // 指定成员（按人统计下钻）
 }
 
 // 记账汇总弹窗：合计 + 分类统计 + 按人统计 + 按月汇总；分类/月份可点进去看明细
@@ -112,6 +113,7 @@ export const LedgerSummary = ({ isDarkMode, fontSize, groupId, groupName, onJump
   const [detail, setDetail] = useState<DetailTarget | null>(null);
   const [detailData, setDetailData] = useState<LedgerDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // 查询区间（自定义时，结束日期 +1 天转为后端的「不含边界」to）
   const range = useMemo(() => {
@@ -154,6 +156,45 @@ export const LedgerSummary = ({ isDarkMode, fontSize, groupId, groupName, onJump
     void loadCats();
   }, [loadCats]);
 
+  // 导出当前时间范围内的全部逐笔记录为 CSV（Excel 可直接打开）
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const all: LedgerDetailRow[] = [];
+      let offset = 0;
+      for (;;) {
+        const r = await api.messagesLedgerDetail({
+          group_id: groupId, kind: 0, from: range.from, to: range.to, limit: 300, offset,
+        });
+        all.push(...r.rows);
+        if (r.has_more !== 1 || r.rows.length === 0) break;
+        offset += r.rows.length;
+      }
+      const header = ['记账日期', '类型', '分类', '金额(元)', '摘要', '记账人', '消息日期'];
+      const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+      const kindName = (r: LedgerDetailRow) =>
+        r.amount_kind === 1 ? (r.amount_cents >= 0 ? '支出' : '退款') : r.amount_cents >= 0 ? '收入' : '收入调减';
+      const lines = all.map((r) =>
+        [r.ledger_date, kindName(r), r.amount_cat, (r.amount_cents / 100).toFixed(2), rowPreview(r), r.nickname, r.created_at.slice(0, 10)]
+          .map(esc).join(','),
+      );
+      // ﻿ BOM 头，让 Excel 正确识别 UTF-8 编码
+      const csv = '﻿' + [header.map(esc).join(','), ...lines].join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = `${range.from ?? '全部'}_${range.to ?? ''}`.replace(/[^\d-]/g, '');
+      a.href = url;
+      a.download = `记账导出_${groupName.replace(/[\\/:*?"<>|]/g, '_')}_${stamp || '全部'}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '导出失败');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // 加载明细（offset>0 为「加载更多」，追加到已有列表）
   const loadDetail = useCallback(
     async (t: DetailTarget, offset = 0) => {
@@ -161,6 +202,7 @@ export const LedgerSummary = ({ isDarkMode, fontSize, groupId, groupName, onJump
       try {
         const p: Parameters<typeof api.messagesLedgerDetail>[0] = { group_id: groupId, kind: t.kind, limit: 100, offset };
         if (t.category !== null) p.category = t.category;
+        if (t.userId) p.user_id = t.userId;
         if (t.month) {
           p.month = t.month;
         } else {
@@ -189,9 +231,9 @@ export const LedgerSummary = ({ isDarkMode, fontSize, groupId, groupName, onJump
 
   // 按人汇总：把 (user, kind) 两行合成一行「支出 / 收入」
   const byUser = useMemo(() => {
-    const map = new Map<number, { nickname: string; expense: number; income: number; count: number }>();
+    const map = new Map<number, { user_id: number; nickname: string; expense: number; income: number; count: number }>();
     for (const r of data?.by_user ?? []) {
-      const row = map.get(r.user_id) ?? { nickname: r.nickname, expense: 0, income: 0, count: 0 };
+      const row = map.get(r.user_id) ?? { user_id: r.user_id, nickname: r.nickname, expense: 0, income: 0, count: 0 };
       if (r.kind === 1) row.expense += r.total;
       else row.income += r.total;
       row.count += r.count;
@@ -568,10 +610,12 @@ export const LedgerSummary = ({ isDarkMode, fontSize, groupId, groupName, onJump
                           <h4 className={sectionTitle}>按人统计</h4>
                           <div className={`rounded-xl overflow-hidden border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
                             {byUser.map((u, i) => (
-                              <div
-                                key={u.nickname + i}
-                                className={`flex items-center justify-between gap-2 px-3 py-2 ${i > 0 ? (isDarkMode ? 'border-t border-gray-700' : 'border-t border-gray-100') : ''} ${
-                                  isDarkMode ? 'bg-gray-700/40' : 'bg-gray-50'
+                              <button
+                                key={u.user_id}
+                                onClick={() => setDetail({ title: `${u.nickname || '（未知用户）'} 的明细`, kind: 0, category: null, userId: u.user_id })}
+                                title="点击查看该成员的逐笔明细"
+                                className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-inherit ${i > 0 ? (isDarkMode ? 'border-t border-gray-700' : 'border-t border-gray-100') : ''} ${
+                                  isDarkMode ? 'bg-gray-700/40 hover:bg-gray-700/70' : 'bg-gray-50 hover:bg-gray-100'
                                 }`}
                                 style={{ fontSize: `${Math.max(fontSize - 2, 14)}px` }}
                               >
@@ -582,7 +626,7 @@ export const LedgerSummary = ({ isDarkMode, fontSize, groupId, groupName, onJump
                                   {u.income !== 0 && <span className={isDarkMode ? 'text-green-300' : 'text-green-600'}>收入 {money(u.income)}</span>}
                                   <span className={`ml-1.5 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>{u.count}笔</span>
                                 </span>
-                              </div>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -597,7 +641,7 @@ export const LedgerSummary = ({ isDarkMode, fontSize, groupId, groupName, onJump
                       <p className={subCls}>暂无数据</p>
                     ) : (
                       <div className={`rounded-xl overflow-hidden border ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-                        <div className={`grid grid-cols-4 gap-2 px-3 py-2 text-sm font-medium ${isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
+                        <div className={`grid grid-cols-[auto_1fr_1fr_1fr] gap-2 px-3 py-2 text-sm font-medium ${isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
                           <span>月份</span>
                           <span className="text-right">支出</span>
                           <span className="text-right">收入</span>
@@ -608,14 +652,14 @@ export const LedgerSummary = ({ isDarkMode, fontSize, groupId, groupName, onJump
                             key={m.month}
                             onClick={() => setDetail({ title: `${m.month} 明细`, kind: 0, category: null, month: m.month })}
                             title="点击查看该月明细"
-                            className={`w-full grid grid-cols-4 gap-2 px-3 py-2 text-left text-base text-inherit ${
+                            className={`w-full grid grid-cols-[auto_1fr_1fr_1fr] gap-2 px-3 py-2 text-left text-xs text-inherit ${
                               i > 0 ? (isDarkMode ? 'border-t border-gray-700' : 'border-t border-gray-100') : ''
                             } ${isDarkMode ? 'hover:bg-gray-700/60' : 'hover:bg-gray-50'}`}
                           >
-                            <span>{m.month}</span>
-                            <span className={`text-right ${isDarkMode ? 'text-red-300' : 'text-red-600'}`}>{money(m.expense)}</span>
-                            <span className={`text-right ${isDarkMode ? 'text-green-300' : 'text-green-600'}`}>{money(m.income)}</span>
-                            <span className={`text-right font-medium ${m.net >= 0 ? (isDarkMode ? 'text-gray-100' : 'text-gray-800') : isDarkMode ? 'text-red-300' : 'text-red-600'}`}>
+                            <span className="whitespace-nowrap">{m.month}</span>
+                            <span className={`text-right whitespace-nowrap ${isDarkMode ? 'text-red-300' : 'text-red-600'}`}>{money(m.expense)}</span>
+                            <span className={`text-right whitespace-nowrap ${isDarkMode ? 'text-green-300' : 'text-green-600'}`}>{money(m.income)}</span>
+                            <span className={`text-right whitespace-nowrap font-medium ${m.net >= 0 ? (isDarkMode ? 'text-gray-100' : 'text-gray-800') : isDarkMode ? 'text-red-300' : 'text-red-600'}`}>
                               {money(m.net)}
                             </span>
                           </button>
@@ -676,6 +720,19 @@ export const LedgerSummary = ({ isDarkMode, fontSize, groupId, groupName, onJump
                         ))}
                       </div>
                     )}
+                  </div>
+
+                  {/* 导出财务记录（按当前所选时间范围） */}
+                  <div className={`pt-3 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <button
+                      onClick={() => void exportCsv()}
+                      disabled={exporting}
+                      className={`flex items-center gap-1.5 text-sm ${isDarkMode ? 'text-gray-300 hover:text-white' : 'text-gray-600 hover:text-gray-800'} disabled:opacity-50`}
+                    >
+                      {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                      {exporting ? '正在导出…' : '导出财务记录（CSV）'}
+                    </button>
+                    <p className={`${subCls} mt-1`}>按当前所选时间范围导出全部逐笔记录，可用 Excel 打开</p>
                   </div>
                 </>
               ) : null}

@@ -305,6 +305,7 @@ export const api = {
     group_id: number;
     kind?: 0 | 1 | 2;
     category?: string;
+    user_id?: number; // 按人统计下钻：只看某个人的记录
     month?: string;
     from?: string;
     to?: string;
@@ -313,6 +314,7 @@ export const api = {
   }) => {
     const params: Record<string, string | number> = { group_id: p.group_id, kind: p.kind ?? 0 };
     if (p.category !== undefined) params.category = p.category;
+    if (p.user_id) params.user_id = p.user_id;
     if (p.month) params.month = p.month;
     if (p.from) params.from = p.from;
     if (p.to) params.to = p.to;
