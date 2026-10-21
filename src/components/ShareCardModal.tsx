@@ -267,12 +267,14 @@ const AutoTextarea = ({
   className,
   autoFocus,
   placeholder,
+  style,
 }: {
   value: string;
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   className?: string;
   autoFocus?: boolean;
   placeholder?: string;
+  style?: React.CSSProperties;
 }) => {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -282,7 +284,16 @@ const AutoTextarea = ({
     el.style.height = `${Math.min(el.scrollHeight, Math.round(window.innerHeight * 0.5))}px`;
   }, [value]);
   return (
-    <textarea ref={ref} value={value} onChange={onChange} rows={3} autoFocus={autoFocus} placeholder={placeholder} className={className} />
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={onChange}
+      rows={3}
+      autoFocus={autoFocus}
+      placeholder={placeholder}
+      className={className}
+      style={style}
+    />
   );
 };
 
@@ -319,6 +330,24 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
   const t = THEMES[theme];
   const font = FONT_OPTS[style.fontKey].stack;
   const padding = PAD_OPTS[style.padKey].value;
+  // 「修改正文」编辑框所见即所得：编辑框本体即白色卡片——宽度 = 白色卡片宽度（预览灰框 380 − 灰色内边距 24 = 356），
+  // 内边距 = 卡片边距档位；borderWidth 0 去掉输入框自带边框，外形与白卡完全重合，文字区宽度随之精确一致；
+  // 字体/字号/加粗/行距也与卡片正文一致（字体不同则每行容纳字符数不同）；窄屏 maxWidth 兜底
+  const bodyTaStyle: React.CSSProperties = {
+    fontFamily: font,
+    fontSize: style.fontSize,
+    fontWeight: style.bold ? 700 : 400,
+    lineHeight: 1.8,
+    padding,
+    width: 356,
+    maxWidth: '100%',
+    borderWidth: 0,
+    wordBreak: 'break-all', // 与卡片正文 break-all 同规则，标点/单词断行位置一致
+  };
+  // 编辑框外的灰色衬底：与卡片预览灰框完全同款同行为（w-[380px] max-w-full p-3），弹窗里复刻「灰框包白卡」结构；
+  // 手机上预览灰框会收缩到弹窗宽度，编辑框灰框必须同样收缩（不能用随内容定宽的 inline-flex，
+  // 否则装不下 356px 时灰框溢出、宽度与预览灰框不一致），编辑框 maxWidth:100% 随灰框同步缩放
+  const bodyTaFrameCls = `w-[380px] max-w-full p-3 rounded-xl ${isDarkMode ? 'bg-gray-900' : 'bg-gray-200'}`;
   const isMulti = messages.length > 1;
   const date = messages[0].created_at.slice(0, 10);
   const lastDate = messages[messages.length - 1].created_at.slice(0, 10);
@@ -972,12 +1001,18 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                               return next;
                             }),
                           )}
-                          <AutoTextarea
-                            autoFocus={m.id === textMsgs[0].id}
-                            value={contentOf(m)}
-                            onChange={(e) => setContentEdit(m.id, e.target.value, m.content)}
-                            className={`${editInputCls} resize-y whitespace-pre-wrap`}
-                          />
+                          {/* 灰框包白卡（编辑框），与预览区结构一致 */}
+                          <div className="flex justify-center">
+                            <div className={bodyTaFrameCls}>
+                              <AutoTextarea
+                                autoFocus={m.id === textMsgs[0].id}
+                                value={contentOf(m)}
+                                onChange={(e) => setContentEdit(m.id, e.target.value, m.content)}
+                                className={`${editInputCls} resize-y whitespace-pre-wrap`}
+                                style={bodyTaStyle}
+                              />
+                            </div>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -993,12 +1028,18 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                         return next;
                       }),
                     )}
-                    <AutoTextarea
-                      autoFocus
-                      value={contentOf(messages[0])}
-                      onChange={(e) => setContentEdit(messages[0].id, e.target.value, messages[0].content)}
-                      className={`${editInputCls} resize-y whitespace-pre-wrap`}
-                    />
+                    {/* 灰框包白卡（编辑框），与预览区结构一致 */}
+                    <div className="flex justify-center">
+                      <div className={bodyTaFrameCls}>
+                        <AutoTextarea
+                          autoFocus
+                          value={contentOf(messages[0])}
+                          onChange={(e) => setContentEdit(messages[0].id, e.target.value, messages[0].content)}
+                          className={`${editInputCls} resize-y whitespace-pre-wrap`}
+                          style={bodyTaStyle}
+                        />
+                      </div>
+                    </div>
                   </div>
                 ))}
 
