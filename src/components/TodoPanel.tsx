@@ -214,13 +214,21 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
     if (isOverdueTodo(m.due_at, m.todo_status)) return 'overdue';
     return (m.due_at ?? '').slice(0, 10) === todayStr ? 'today' : 'upcoming';
   };
-  // 颜色圆点：红=已到期、绿=今天、灰=未到期、空心绿=已完成（与页签配色一致）
+  // 圆点规则：实心=未完成、空心=已完成；绿=未到期、红=已到期、灰=已归档
   const dueDotCls = (m: CrossGroupMessage) => {
     const st = dueStateOf(m);
-    if (st === 'done') return 'border border-green-500 bg-transparent';
+    const archived = m.todo_archived === 1;
+    const done = st === 'done';
+    if (archived) {
+      return done
+        ? 'border border-gray-400 dark:border-gray-500 bg-transparent'
+        : isDarkMode
+          ? 'bg-gray-500'
+          : 'bg-gray-400';
+    }
+    if (done) return 'border border-green-500 bg-transparent';
     if (st === 'overdue') return 'bg-red-500';
-    if (st === 'today') return 'bg-green-500';
-    return isDarkMode ? 'bg-gray-500' : 'bg-gray-400';
+    return 'bg-green-500'; // 未到期（含今天和未来）
   };
 
   const shiftCalMonth = (delta: number) => {
@@ -256,18 +264,8 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
         ? 'text-gray-100'
         : 'text-gray-700';
     const noteCls = archived ? 'text-gray-400 dark:text-gray-500' : '';
-    // 状态 emoji：已完成=✅、已到期=🔴、今天=🟢、未到期=⚪
-    const stateIconStyle = { fontSize: `${contentSize}px`, lineHeight: '1.5' };
-    const stateIcon =
-      st === 'done' ? (
-        <span className="flex-shrink-0" style={stateIconStyle}>✅</span>
-      ) : st === 'overdue' ? (
-        <span className="flex-shrink-0" style={stateIconStyle}>🔴</span>
-      ) : st === 'today' ? (
-        <span className="flex-shrink-0" style={stateIconStyle}>🟢</span>
-      ) : (
-        <span className="flex-shrink-0" style={stateIconStyle}>⚪</span>
-      );
+    // 状态圆点（与月历格子同规则：实心=未完成、空心=已完成；绿=未到期、红=已到期、灰=已归档）
+    const dotCls = dueDotCls(m);
     // 折叠模式下，该条是否被单独展开
     const isExpanded = !compact || expandedIds.has(m.id);
     const toggleExpand = (e: React.MouseEvent) => {
@@ -294,12 +292,17 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
         >
           {(m.due_at ?? '').slice(11, 16)}
         </span>
-        {stateIcon}
         <div className="flex-1 min-w-0">
           <p
             className={`break-words line-clamp-2 ${bodyCls}`}
             style={{ fontSize: `${contentSize}px`, lineHeight: '1.5' }}
           >
+            <span className="inline-flex items-center mr-1.5">
+              <span
+                className={`inline-block rounded-full ${dotCls}`}
+                style={{ width: '0.75em', height: '0.75em' }}
+              />
+            </span>
             {msgText(m)}
           </p>
           {isExpanded && (
