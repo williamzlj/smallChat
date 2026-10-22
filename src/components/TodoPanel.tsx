@@ -235,9 +235,12 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
   // compact=true 时只显示时间+标题，隐藏备注/标签/群名；折叠模式下可单独展开某条
   const reminderRow = (m: CrossGroupMessage, compact = false) => {
     const st = dueStateOf(m);
+    const archived = m.todo_archived === 1;
     const tagText = st === 'done' ? '已完成' : st === 'overdue' ? '已到期' : st === 'today' ? '今天' : '未到期';
-    const tagCls =
-      st === 'done'
+    // 已归档时标签统一灰底，与列表视图风格一致
+    const tagCls = archived
+      ? 'bg-gray-400 text-white'
+      : st === 'done'
         ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
         : st === 'today'
           ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
@@ -246,6 +249,13 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
             : isDarkMode
               ? 'bg-gray-700 text-gray-400'
               : 'bg-gray-100 text-gray-600';
+    // 归档时正文、备注统一灰色
+    const bodyCls = archived
+      ? 'text-gray-400 dark:text-gray-500'
+      : isDarkMode
+        ? 'text-gray-100'
+        : 'text-gray-700';
+    const noteCls = archived ? 'text-gray-400 dark:text-gray-500' : '';
     // 状态 emoji：已完成=✅、已到期=🔴、今天=🟢、未到期=⚪
     const stateIconStyle = { fontSize: `${contentSize}px`, lineHeight: '1.5' };
     const stateIcon =
@@ -279,7 +289,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
         }`}
       >
         <span
-          className={`font-mono flex-shrink-0 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
+          className={`font-mono flex-shrink-0 ${archived ? 'text-gray-400 dark:text-gray-500' : isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
           style={{ fontSize: `${contentSize}px`, lineHeight: '1.5' }}
         >
           {(m.due_at ?? '').slice(11, 16)}
@@ -287,9 +297,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
         {stateIcon}
         <div className="flex-1 min-w-0">
           <p
-            className={`break-words line-clamp-2 ${
-              isDarkMode ? 'text-gray-100' : 'text-gray-700'
-            }`}
+            className={`break-words line-clamp-2 ${bodyCls}`}
             style={{ fontSize: `${contentSize}px`, lineHeight: '1.5' }}
           >
             {msgText(m)}
@@ -297,21 +305,21 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
           {isExpanded && (
             <>
               {m.todo_note && (
-                <p className="mt-0.5 text-amber-600 dark:text-amber-500" style={{ fontSize: `${auxSize}px` }}>
+                <p className={`mt-0.5 ${noteCls || 'text-amber-600 dark:text-amber-500'}`} style={{ fontSize: `${auxSize}px` }}>
                   待办备注：{m.todo_note}
                 </p>
               )}
               {m.note && (
-                <p className="mt-0.5 text-blue-500 dark:text-blue-400" style={{ fontSize: `${auxSize}px` }}>
+                <p className={`mt-0.5 ${noteCls || 'text-blue-500 dark:text-blue-400'}`} style={{ fontSize: `${auxSize}px` }}>
                   公共备注：{m.note}
                 </p>
               )}
               {m.my_note && (
-                <p className="mt-0.5 text-gray-500 dark:text-gray-400" style={{ fontSize: `${auxSize}px` }}>
+                <p className={`mt-0.5 ${noteCls || 'text-gray-500 dark:text-gray-400'}`} style={{ fontSize: `${auxSize}px` }}>
                   我的备注：{m.my_note}
                 </p>
               )}
-              <p className="text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap" style={{ fontSize: `${auxSize}px` }}>
+              <p className={`${archived ? 'text-gray-400 dark:text-gray-500' : 'text-gray-400'} mt-0.5 flex items-center gap-2 flex-wrap`} style={{ fontSize: `${auxSize}px` }}>
                 <span
                   className={`flex-shrink-0 px-1.5 py-0.5 rounded text-sm font-medium ${tagCls}`}
                 >
