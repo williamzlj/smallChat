@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Zap, RotateCcw } from 'lucide-react';
+import { X, Zap, RotateCcw, BellRing, ChevronRight } from 'lucide-react';
 
 // 快速文本：紧急/重要 + 时长（按时间从短到长排序，便于扫描）
 export const TODO_QUICK_TAGS = [
@@ -19,11 +19,13 @@ interface Props {
   title: string; // 弹窗标题（添加待办备注 / 修改待办备注 / 设为待办事项）
   initialNote: string; // 初始备注（已有待办备注；用于"还原"按钮）
   onSave: (note: string) => Promise<void> | void;
+  // 设置提醒入口（可选）：传入后才显示；点击时一并提交当前备注并打开到点提醒编辑
+  onSetDue?: (note: string) => Promise<void> | void;
   onClose: () => void;
 }
 
-// 待办备注编辑弹窗：textarea + 快速文本按钮 + 还原按钮
-export const TodoNoteModal = ({ isDarkMode, title, initialNote, onSave, onClose }: Props) => {
+// 待办备注编辑弹窗：textarea + 快速文本按钮 + 设置提醒入口 + 还原按钮
+export const TodoNoteModal = ({ isDarkMode, title, initialNote, onSave, onSetDue, onClose }: Props) => {
   const [note, setNote] = useState(initialNote);
   const [saving, setSaving] = useState(false);
   // 是否修改过：控制"还原"按钮显隐（没改过就不显示，避免干扰）
@@ -45,6 +47,17 @@ export const TodoNoteModal = ({ isDarkMode, title, initialNote, onSave, onClose 
     setSaving(true);
     try {
       await onSave(note.trim());
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 设置提醒：先提交备注（避免已填内容丢失），再由外部打开到点提醒编辑
+  const setDue = async () => {
+    if (saving || !onSetDue) return;
+    setSaving(true);
+    try {
+      await onSetDue(note.trim());
     } finally {
       setSaving(false);
     }
@@ -97,6 +110,22 @@ export const TodoNoteModal = ({ isDarkMode, title, initialNote, onSave, onClose 
               isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'
             }`}
           />
+          {/* 设置提醒入口：顺手把这条待办设个到点提醒（会先保存当前备注） */}
+          {onSetDue && (
+            <button
+              onClick={() => void setDue()}
+              disabled={saving}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors disabled:opacity-50 ${
+                isDarkMode
+                  ? 'border-amber-500/60 text-amber-300 hover:bg-gray-700'
+                  : 'border-amber-400 text-amber-700 hover:bg-amber-50'
+              }`}
+            >
+              <BellRing className="w-4 h-4 flex-shrink-0" />
+              <span className="flex-1 text-left">设置到点提醒</span>
+              <ChevronRight className="w-4 h-4 opacity-60" />
+            </button>
+          )}
           <div className="flex items-center justify-between gap-2 pt-1">
             {changed && initialNote !== '' && (
               <button

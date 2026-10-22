@@ -84,11 +84,20 @@ html, body {
   }
 }
 
+/* iOS 上的 Chrome/Safari（都是 WebKit）：聚焦字号小于 16px 的输入框时，
+   浏览器会自动放大（zoom）页面，表现为弹窗一出现整个界面被"撑大"。
+   这里把表单控件字号兜底到 16px，避免待办备注等弹窗触发自动缩放。 */
+@supports (-webkit-touch-callout: none) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
 @supports (bottom: env(safe-area-inset-bottom)) {
   body {
     padding-bottom: env(safe-area-inset-bottom);
   }
-  
+
   .pb-safe {
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
   }

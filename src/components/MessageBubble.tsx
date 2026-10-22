@@ -224,6 +224,7 @@ const NoteModal = ({
               onChange={(e) => canPublic && setPubNote(e.target.value.slice(0, 500))}
               readOnly={!canPublic}
               rows={3}
+              autoFocus={canPublic}
               placeholder={canPublic ? '公共备注，全员可见（留空清除）' : '无公共备注'}
               className={`w-full px-3 py-2 text-sm border rounded-lg outline-none resize-none ${
                 isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'
@@ -239,7 +240,7 @@ const NoteModal = ({
               value={privNote}
               onChange={(e) => setPrivNote(e.target.value.slice(0, 500))}
               rows={3}
-              autoFocus
+              autoFocus={!canPublic}
               placeholder="私有备注，仅自己可见（留空清除）"
               className={`w-full px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-green-500 resize-none ${
                 isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'
@@ -965,7 +966,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <Wallet className={`w-4 h-4 ${message.amount_kind > 0 ? 'text-rose-500' : 'text-gray-400'}`} />
+                <Wallet className="w-4 h-4 text-red-500" />
                 <span>{message.amount_kind > 0 ? '修改金额' : '记账'}</span>
               </button>
             )}
