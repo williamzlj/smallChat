@@ -363,44 +363,49 @@ export const PanelItem = ({
         )}
         {/* 左侧固定 gutter（w-4）=待办勾选框 / 重要彩色圆点；右侧正文+备注+次要信息全部左对齐 */}
         <div className="flex items-start gap-1.5">
-          {/* gutter 列：勾选框(待办) / 彩色圆点(重要)。外层 flex items-start 下均从顶部开始 */}
-          <div className="w-4 flex-shrink-0">
+          {/* gutter 列：勾选框(待办) / 彩色圆点(重要)。与右侧正文顶部同基准，mt 补偿文字 leading */}
+          <div className="w-4 flex-shrink-0 mt-[3px]">
             {mode === 'todo' ? (
               msg.todo_status === 1 ? (
-                <Square
-                  className={`w-4 h-4 ${archived ? 'text-gray-400' : 'text-amber-500'}`}
-                  style={{ marginTop: '3px' }}
-                />
+                <Square className={`w-4 h-4 ${archived ? 'text-gray-400' : 'text-amber-500'}`} />
               ) : (
-                <CheckSquare
-                  className={`w-4 h-4 ${archived ? 'text-gray-400' : 'text-green-500'}`}
-                  style={{ marginTop: '3px' }}
-                />
+                <CheckSquare className={`w-4 h-4 ${archived ? 'text-gray-400' : 'text-green-500'}`} />
               )
             ) : msg.color_mark > 0 ? (
-              // 重要消息：左侧带颜色圆点，白色细边框；归档后灰化；mt-0 保证与正文第一行顶对齐
-              <span
-                className="w-3 h-3 rounded-full inline-block mt-0 ring-2 ring-white"
-                style={{
-                  backgroundColor: archived
-                    ? '#9CA3AF'
-                    : msg.color_mark === 1
-                      ? '#EF4444'
-                      : msg.color_mark === 2
-                        ? '#F97316'
-                        : msg.color_mark === 6
-                          ? '#EAB308'
-                          : msg.color_mark === 7
-                            ? '#22C55E'
-                            : msg.color_mark === 3
-                              ? '#3B82F6'
-                              : msg.color_mark === 4
-                                ? '#6B7280'
-                                : msg.color_mark === 5
-                                  ? '#8B5CF6'
-                                  : '#9CA3AF',
-                }}
-              />
+              // 重要消息：彩色圆点用 SVG（纯色 + 白色描边），和 lucide 图标一样吃父级 mt，统一处理对齐
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <circle
+                  cx="8"
+                  cy="8"
+                  r="6.5"
+                  fill={
+                    archived
+                      ? '#9CA3AF'
+                      : msg.color_mark === 1
+                        ? '#EF4444'
+                        : msg.color_mark === 2
+                          ? '#F97316'
+                          : msg.color_mark === 6
+                            ? '#EAB308'
+                            : msg.color_mark === 7
+                              ? '#22C55E'
+                              : msg.color_mark === 3
+                                ? '#3B82F6'
+                                : msg.color_mark === 4
+                                  ? '#6B7280'
+                                  : msg.color_mark === 5
+                                    ? '#8B5CF6'
+                                    : '#9CA3AF'
+                  }
+                  stroke="white"
+                  strokeWidth="2"
+                />
+              </svg>
             ) : (
               <span className="w-4 h-4" />
             )}
@@ -423,7 +428,7 @@ export const PanelItem = ({
                 {msgText(msg)}
               </p>
               {/* 右侧操作按钮 */}
-              <div className="flex items-center gap-0.5 flex-shrink-0 -mt-0.5">
+              <div className="flex items-center gap-0.5 flex-shrink-0 mt-[3px]">
                 {canDelegate && (
                   <button
                     onClick={(e) => {

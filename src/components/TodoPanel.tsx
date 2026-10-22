@@ -230,13 +230,15 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
     const st = dueStateOf(m);
     const tagText = st === 'done' ? '已完成' : st === 'overdue' ? '已到期' : st === 'today' ? '今天' : '未到期';
     const tagCls =
-      st === 'done' || st === 'today'
-        ? 'text-green-600 dark:text-green-400'
-        : st === 'overdue'
-          ? 'text-red-600 dark:text-red-400'
-          : isDarkMode
-            ? 'text-gray-400'
-            : 'text-gray-500';
+      st === 'done'
+        ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+        : st === 'today'
+          ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+          : st === 'overdue'
+            ? 'bg-red-500 text-white'
+            : isDarkMode
+              ? 'bg-gray-700 text-gray-400'
+              : 'bg-gray-100 text-gray-600';
     return (
       <div
         key={m.id}
@@ -261,15 +263,28 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
           >
             {msgText(m)}
           </p>
+          {m.todo_note && (
+            <p className="mt-0.5 text-amber-600 dark:text-amber-500" style={{ fontSize: `${auxSize}px` }}>
+              待办备注：{m.todo_note}
+            </p>
+          )}
+          {m.note && (
+            <p className="mt-0.5 text-blue-500 dark:text-blue-400" style={{ fontSize: `${auxSize}px` }}>
+              公共备注：{m.note}
+            </p>
+          )}
+          {m.my_note && (
+            <p className="mt-0.5 text-gray-500 dark:text-gray-400" style={{ fontSize: `${auxSize}px` }}>
+              我的备注：{m.my_note}
+            </p>
+          )}
           <p className="text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap" style={{ fontSize: `${auxSize}px` }}>
-            <span className="truncate">「{m.group_name}」</span>
             <span
-              className={`flex-shrink-0 ${
-                st === 'overdue' ? 'px-1.5 py-0.5 rounded text-sm font-medium bg-red-500 text-white' : tagCls
-              }`}
+              className={`flex-shrink-0 px-1.5 py-0.5 rounded text-sm font-medium ${tagCls}`}
             >
               {tagText}
             </span>
+            <span className="truncate">「{m.group_name}」</span>
           </p>
         </div>
       </div>
