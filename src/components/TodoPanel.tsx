@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Inbox, Menu, X, Download, Copy, Archive, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, Inbox, Menu, X, Download, Copy, Archive, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { api } from '../api/client';
 import { CrossGroupMessage, GroupRole } from '../api/types';
 import { usePanelMenu, PanelItem, msgLine, msgText, PanelAction, isOverdueTodo } from './PanelShared';
@@ -31,9 +31,15 @@ const weekdayOf = (date: string) => WEEKDAY[new Date(`${date}T00:00:00`).getDay(
 // 跨群待办面板：未完成 / 已完成，支持归档过滤、右键操作、多选合并复制
 export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sidebarOpen, roleOf, onDelegate }: Props) => {
   const [tab, setTab] = useState<Tab>('pending');
+  // 进入月历前的列表 tab，返回时恢复
+  const [prevListTab, setPrevListTab] = useState<Tab>('pending');
   const [showArchived, setShowArchived] = useState(false);
   // 是否显示两个月后的远期提醒（默认关闭，避免每年检查这种远期事项淹没列表）
   const [showFarDue, setShowFarDue] = useState(false);
+  // 月历折叠模式：只显示标题，隐藏备注/标签/群名
+  const [calCompact, setCalCompact] = useState(false);
+  // 折叠模式下单独展开的消息 id
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [messages, setMessages] = useState<CrossGroupMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [exportMsg, setExportMsg] = useState('');
@@ -226,7 +232,8 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
   };
 
   // 单条提醒（月历下方当日清单 / 列表视图共用）
-  const reminderRow = (m: CrossGroupMessage) => {
+  // compact=true 时只显示时间+标题，隐藏备注/标签/群名；折叠模式下可单独展开某条
+  const reminderRow = (m: CrossGroupMessage, compact = false) => {
     const st = dueStateOf(m);
     const tagText = st === 'done' ? '已完成' : st === 'overdue' ? '已到期' : st === 'today' ? '今天' : '未到期';
     const tagCls =
@@ -239,6 +246,29 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
             : isDarkMode
               ? 'bg-gray-700 text-gray-400'
               : 'bg-gray-100 text-gray-600';
+    // 状态 emoji：已完成=✅、已到期=🔴、今天=🟢、未到期=⚪
+    const stateIconStyle = { fontSize: `${contentSize}px`, lineHeight: '1.5' };
+    const stateIcon =
+      st === 'done' ? (
+        <span className="flex-shrink-0" style={stateIconStyle}>✅</span>
+      ) : st === 'overdue' ? (
+        <span className="flex-shrink-0" style={stateIconStyle}>🔴</span>
+      ) : st === 'today' ? (
+        <span className="flex-shrink-0" style={stateIconStyle}>🟢</span>
+      ) : (
+        <span className="flex-shrink-0" style={stateIconStyle}>⚪</span>
+      );
+    // 折叠模式下，该条是否被单独展开
+    const isExpanded = !compact || expandedIds.has(m.id);
+    const toggleExpand = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setExpandedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(m.id)) next.delete(m.id);
+        else next.add(m.id);
+        return next;
+      });
+    };
     return (
       <div
         key={m.id}
@@ -249,44 +279,60 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
         }`}
       >
         <span
-          className={`font-mono flex-shrink-0 leading-6 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
-          style={{ fontSize: `${contentSize}px` }}
+          className={`font-mono flex-shrink-0 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}
+          style={{ fontSize: `${contentSize}px`, lineHeight: '1.5' }}
         >
           {(m.due_at ?? '').slice(11, 16)}
         </span>
+        {stateIcon}
         <div className="flex-1 min-w-0">
           <p
             className={`break-words line-clamp-2 ${
               isDarkMode ? 'text-gray-100' : 'text-gray-700'
             }`}
-            style={{ fontSize: `${contentSize}px` }}
+            style={{ fontSize: `${contentSize}px`, lineHeight: '1.5' }}
           >
             {msgText(m)}
           </p>
-          {m.todo_note && (
-            <p className="mt-0.5 text-amber-600 dark:text-amber-500" style={{ fontSize: `${auxSize}px` }}>
-              待办备注：{m.todo_note}
-            </p>
+          {isExpanded && (
+            <>
+              {m.todo_note && (
+                <p className="mt-0.5 text-amber-600 dark:text-amber-500" style={{ fontSize: `${auxSize}px` }}>
+                  待办备注：{m.todo_note}
+                </p>
+              )}
+              {m.note && (
+                <p className="mt-0.5 text-blue-500 dark:text-blue-400" style={{ fontSize: `${auxSize}px` }}>
+                  公共备注：{m.note}
+                </p>
+              )}
+              {m.my_note && (
+                <p className="mt-0.5 text-gray-500 dark:text-gray-400" style={{ fontSize: `${auxSize}px` }}>
+                  我的备注：{m.my_note}
+                </p>
+              )}
+              <p className="text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap" style={{ fontSize: `${auxSize}px` }}>
+                <span
+                  className={`flex-shrink-0 px-1.5 py-0.5 rounded text-sm font-medium ${tagCls}`}
+                >
+                  {tagText}
+                </span>
+                <span className="truncate">「{m.group_name}」</span>
+              </p>
+            </>
           )}
-          {m.note && (
-            <p className="mt-0.5 text-blue-500 dark:text-blue-400" style={{ fontSize: `${auxSize}px` }}>
-              公共备注：{m.note}
-            </p>
-          )}
-          {m.my_note && (
-            <p className="mt-0.5 text-gray-500 dark:text-gray-400" style={{ fontSize: `${auxSize}px` }}>
-              我的备注：{m.my_note}
-            </p>
-          )}
-          <p className="text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap" style={{ fontSize: `${auxSize}px` }}>
-            <span
-              className={`flex-shrink-0 px-1.5 py-0.5 rounded text-sm font-medium ${tagCls}`}
-            >
-              {tagText}
-            </span>
-            <span className="truncate">「{m.group_name}」</span>
-          </p>
         </div>
+        {compact && (
+          <button
+            onClick={toggleExpand}
+            className={`flex-shrink-0 p-1 rounded ${
+              isDarkMode ? 'text-gray-500 hover:bg-gray-700 hover:text-gray-300' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+            }`}
+            title={isExpanded ? '收起' : '展开详情'}
+          >
+            <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+          </button>
+        )}
       </div>
     );
   };
@@ -442,7 +488,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
                     )}
                     <span className="text-sm text-gray-400">{list.length} 条提醒</span>
                   </div>
-                  <div className="space-y-1.5">{list.map(reminderRow)}</div>
+                  <div className="space-y-1.5">{list.map((m) => reminderRow(m, calCompact))}</div>
                 </div>
               ))}
             </div>
@@ -487,7 +533,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
               {selectedItems.length === 0 ? (
                 <p className="text-sm text-gray-400 py-1">这天没有设置提醒</p>
               ) : (
-                <div className="space-y-1.5">{selectedItems.map(reminderRow)}</div>
+                <div className="space-y-1.5">{selectedItems.map((m) => reminderRow(m, calCompact))}</div>
               )}
             </div>
           </>
@@ -567,7 +613,47 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
           >
             {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-          <h2 className={`text-base font-semibold ml-2 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>全部待办</h2>
+          <h2 className={`text-base font-semibold ml-2 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+            {tab === 'calendar' ? '提醒月历' : '全部待办'}
+          </h2>
+          {/* 列表 / 月历 视图切换滑块 */}
+          <div className={`ml-3 flex items-center rounded-lg p-0.5 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+            <button
+              onClick={() => {
+                if (tab === 'calendar') setTab(prevListTab);
+              }}
+              className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
+                tab !== 'calendar'
+                  ? isDarkMode
+                    ? 'bg-gray-800 text-white'
+                    : 'bg-white text-gray-800 shadow-sm'
+                  : isDarkMode
+                    ? 'text-gray-400'
+                    : 'text-gray-500'
+              }`}
+            >
+              列表
+            </button>
+            <button
+              onClick={() => {
+                if (tab !== 'calendar') {
+                  setPrevListTab(tab);
+                  setTab('calendar');
+                }
+              }}
+              className={`px-2.5 py-1 text-sm rounded-md transition-colors ${
+                tab === 'calendar'
+                  ? isDarkMode
+                    ? 'bg-gray-800 text-white'
+                    : 'bg-white text-gray-800 shadow-sm'
+                  : isDarkMode
+                    ? 'text-gray-400'
+                    : 'text-gray-500'
+              }`}
+            >
+              月历
+            </button>
+          </div>
         </div>
         <div className="flex items-center flex-shrink-0">
           {exportMsg && <span className="text-sm text-green-600 mr-1">{exportMsg}</span>}
@@ -597,56 +683,50 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
       </div>
 
       <div className={`px-3 pt-3 flex gap-2 flex-shrink-0 flex-wrap items-center`}>
-        <button
-          onClick={() => setTab('pending')}
-          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-            tab === 'pending'
-              ? 'bg-amber-500 text-white'
-              : isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-white text-gray-600'
-          }`}
-        >
-          未完成
-        </button>
-        <button
-          onClick={() => setTab('done')}
-          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-            tab === 'done'
-              ? 'bg-green-500 text-white'
-              : isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-white text-gray-600'
-          }`}
-        >
-          已完成
-        </button>
-        <button
-          onClick={() => setTab('dueFuture')}
-          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-            tab === 'dueFuture'
-              ? 'bg-blue-500 text-white'
-              : isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-white text-gray-600'
-          }`}
-        >
-          未到期提醒
-        </button>
-        <button
-          onClick={() => setTab('duePast')}
-          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-            tab === 'duePast'
-              ? 'bg-red-500 text-white'
-              : isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-white text-gray-600'
-          }`}
-        >
-          已到期提醒
-        </button>
-        <button
-          onClick={() => setTab('calendar')}
-          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-            tab === 'calendar'
-              ? 'bg-indigo-500 text-white'
-              : isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-white text-gray-600'
-          }`}
-        >
-          月历
-        </button>
+        {tab !== 'calendar' && (
+          <>
+            <button
+              onClick={() => setTab('pending')}
+              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                tab === 'pending'
+                  ? 'bg-amber-500 text-white'
+                  : isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-white text-gray-600'
+              }`}
+            >
+              未完成
+            </button>
+            <button
+              onClick={() => setTab('done')}
+              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                tab === 'done'
+                  ? 'bg-green-500 text-white'
+                  : isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-white text-gray-600'
+              }`}
+            >
+              已完成
+            </button>
+            <button
+              onClick={() => setTab('dueFuture')}
+              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                tab === 'dueFuture'
+                  ? 'bg-blue-500 text-white'
+                  : isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-white text-gray-600'
+              }`}
+            >
+              未到期提醒
+            </button>
+            <button
+              onClick={() => setTab('duePast')}
+              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                tab === 'duePast'
+                  ? 'bg-red-500 text-white'
+                  : isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-white text-gray-600'
+              }`}
+            >
+              已到期提醒
+            </button>
+          </>
+        )}
         <button
           onClick={() => setShowArchived(!showArchived)}
           className={`flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${
@@ -670,6 +750,20 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
         >
           {showFarDue ? '含远期提醒' : '查看远期提醒'}
         </button>
+        {/* 月历折叠模式：只显示标题，隐藏备注/标签/群名 */}
+        {tab === 'calendar' && (
+          <button
+            onClick={() => setCalCompact(!calCompact)}
+            className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+              calCompact
+                ? 'bg-indigo-500 text-white'
+                : isDarkMode ? 'bg-gray-700 text-gray-400' : 'bg-white text-gray-500'
+            }`}
+            title="折叠后每条提醒只显示时间和标题"
+          >
+            {calCompact ? '展开待办' : '折叠待办'}
+          </button>
+        )}
       </div>
 
       {selectMode && (
