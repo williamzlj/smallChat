@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { X, LogOut, Minus, Plus, Monitor, Trash2, Check, Camera, RefreshCw, Copy } from 'lucide-react';
 import { User, TokenInfo } from '../../api/types';
 import { api } from '../../api/client';
@@ -13,6 +13,10 @@ interface Props {
   onFontSizeChange: (size: number) => void;
   bubbleStyle: 'green' | 'white'; // 我的气泡样式（仅本设备 localStorage）
   onBubbleStyleChange: (style: 'green' | 'white') => void;
+  foldLen: number; // 长消息折叠字数阈值（0=不折叠），仅本设备 localStorage
+  onFoldLenChange: (n: number) => void;
+  todoNotePopup: boolean; // 设为待办时弹出待办备注窗口（快速输入预计时长），仅本设备
+  onTodoNotePopupChange: (v: boolean) => void;
   onUpdate: (data: {
     nickname?: string;
     color?: string;
@@ -36,6 +40,10 @@ export const ProfileSettings = ({
   onFontSizeChange,
   bubbleStyle,
   onBubbleStyleChange,
+  foldLen,
+  onFoldLenChange,
+  todoNotePopup,
+  onTodoNotePopupChange,
   onUpdate,
   onAvatarChanged,
   onLogout,
@@ -296,6 +304,43 @@ export const ProfileSettings = ({
               </button>
             </div>
             <p className="text-xs text-gray-400">仅改变本设备显示，不影响其他成员</p>
+          </section>
+
+          {/* 长消息折叠：超过设定字数的消息默认折叠 6 行，点击可展开；仅本设备生效。0=不折叠 */}
+          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">长消息折叠字数</h3>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min={0}
+                max={9999}
+                value={foldLen}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  onFoldLenChange(Number.isFinite(v) && v >= 0 ? v : 0);
+                }}
+                className={`w-28 px-3 py-1.5 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-green-500 ${
+                  isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'
+                }`}
+              />
+              <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>字（0 = 不折叠）</span>
+            </div>
+            <p className="text-xs text-gray-400">超过这个字数的消息默认折叠 6 行，点击「展开全文」可查看；仅对本设备生效</p>
+          </section>
+
+          {/* 设为待办时弹出备注窗口：可快速输入预计时长；仅本设备 */}
+          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">弹出待办备注窗口</h3>
+            <label className="flex items-center gap-3 cursor-pointer select-none w-fit">
+              <input
+                type="checkbox"
+                checked={todoNotePopup}
+                onChange={(e) => onTodoNotePopupChange(e.target.checked)}
+                className="w-4 h-4 accent-green-500"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-200">设为待办时弹出备注窗口（可快速输入预计时长）</span>
+            </label>
+            <p className="text-xs text-gray-400">默认关闭；关闭时点「设为待办」立即生效，不弹窗；仅对本设备生效</p>
           </section>
 
           {/* 改密码 */}

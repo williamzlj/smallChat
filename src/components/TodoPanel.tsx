@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { Loader2, Inbox, Menu, X, Download, Copy, Archive, ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '../api/client';
 import { CrossGroupMessage, GroupRole } from '../api/types';
 import { usePanelMenu, PanelItem, msgLine, msgText, PanelAction, isOverdueTodo } from './PanelShared';
 import { DueEditor } from './DueEditor';
 import { ContextModal } from './ContextModal';
+import { TodoNoteModal } from './TodoNoteModal';
 
 interface Props {
   isDarkMode: boolean;
@@ -32,6 +32,8 @@ const weekdayOf = (date: string) => WEEKDAY[new Date(`${date}T00:00:00`).getDay(
 export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sidebarOpen, roleOf, onDelegate }: Props) => {
   const [tab, setTab] = useState<Tab>('pending');
   const [showArchived, setShowArchived] = useState(false);
+  // 是否显示两个月后的远期提醒（默认关闭，避免每年检查这种远期事项淹没列表）
+  const [showFarDue, setShowFarDue] = useState(false);
   const [messages, setMessages] = useState<CrossGroupMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [exportMsg, setExportMsg] = useState('');
@@ -39,9 +41,8 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
   const [selected, setSelected] = useState<Set<number>>(new Set());
   // 到点提醒编辑（右键「设置到点提醒」打开）
   const [dueEdit, setDueEdit] = useState<CrossGroupMessage | null>(null);
-  // 待办备注编辑（右键「添加/修改待办备注」打开）
+  // 待办备注编辑（右键「添加/修改待办备注」打开，TodoNoteModal 含快速时长文本）
   const [noteEdit, setNoteEdit] = useState<CrossGroupMessage | null>(null);
-  const [noteDraft, setNoteDraft] = useState('');
   // 上下文弹窗
   const [contextMsg, setContextMsg] = useState<CrossGroupMessage | null>(null);
   // 月历视图：月份、选中日期、列表/月历切换、窄屏判定（手机只显示圆点）
@@ -74,32 +75,34 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
     return () => mq.removeEventListener('change', onChange);
   }, []);
 
-  const handleAction = async (action: PanelAction, msg: CrossGroupMessage) => {
+  const handleAction = async (action: PanelAction, msg: CrossGroupMessage, batchIds?: number[]) => {
+    const ids = batchIds && batchIds.length > 0 ? batchIds : [msg.id];
     try {
       if (action.type === 'todoStatus') {
-        await api.messagesSetTodo(msg.id, action.status);
-        // 本地更新，不再整体刷新列表，保持滚动位置
-        setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, todo_status: action.status } : m)));
+        await Promise.all(ids.map((id) => api.messagesSetTodo(id, action.status)));
+        setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, todo_status: action.status } : m)));
         return;
       } else if (action.type === 'archived') {
-        await api.messagesSetArchived(msg.id, action.archived);
-        setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, todo_archived: action.archived } : m)));
+        await Promise.all(ids.map((id) => api.messagesSetArchived(id, action.archived)));
+        setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, todo_archived: action.archived } : m)));
         return;
       } else if (action.type === 'normal') {
-        await api.messagesSetTodo(msg.id, 0);
-        // 与后端一致：转普通消息时同时清掉到点提醒，否则提醒/月历页签里仍会残留该条
-        setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, todo_status: 0, due_at: null } : m)));
+        await Promise.all(ids.map((id) => api.messagesSetTodo(id, 0)));
+        // 与后端一致：转普通消息时同时清掉到点提醒
+        setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, todo_status: 0, due_at: null } : m)));
         return;
       } else if (action.type === 'setDue') {
         setDueEdit(msg);
         return;
       } else if (action.type === 'todoNote') {
-        setNoteDraft(msg.todo_note ?? '');
         setNoteEdit(msg);
         return;
       } else if (action.type === 'copy') {
-        await navigator.clipboard.writeText(msgLine(msg));
-        setExportMsg('已复制');
+        const list = batchIds && batchIds.length > 0
+          ? messages.filter((m) => batchIds.includes(m.id))
+          : [msg];
+        await navigator.clipboard.writeText(list.map(msgLine).join('\n'));
+        setExportMsg(batchIds && batchIds.length > 0 ? `已复制 ${list.length} 条` : '已复制');
         setTimeout(() => setExportMsg(''), 1500);
         return;
       } else if (action.type === 'viewContext') {
@@ -115,10 +118,10 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
   };
 
   // 保存待办备注：保持当前完成状态，仅更新 note；成功用轻提示反馈
-  const saveTodoNote = async () => {
+  const saveTodoNote = async (noteRaw: string) => {
     const msg = noteEdit;
     if (!msg) return;
-    const note = noteDraft.trim();
+    const note = noteRaw.trim();
     try {
       await api.messagesSetTodo(msg.id, msg.todo_status, note);
       setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, todo_note: note } : m)));
@@ -145,7 +148,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
     [roleOf],
   );
 
-  const { openMenu, menuEl, selTextId, setSelTextId } = usePanelMenu({ isDarkMode, mode: 'todo', onAction: handleAction, canManageOf });
+  const { openMenu, menuEl, selTextId, setSelTextId } = usePanelMenu({ isDarkMode, mode: 'todo', onAction: handleAction, canManageOf, selectMode, selectedIds: selected });
 
   const isDueTab = tab === 'dueFuture' || tab === 'duePast';
   // 与后端 due_at 同格式（Y-m-d H:i:s）的当前时间串，直接按字典序比较
@@ -154,10 +157,19 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
     const d = new Date();
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:59`;
   })();
+  // 两个月后的时间串：用于过滤远期提醒（如每年检查这种 1 年后的事项）
+  const twoMonthsLater = (() => {
+    const p = (n: number) => String(n).padStart(2, '0');
+    const d = new Date();
+    d.setMonth(d.getMonth() + 2);
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} 23:59:59`;
+  })();
 
   const filtered = messages.filter((m) => {
     const matchArchived = showArchived ? true : m.todo_archived === 0;
     if (!matchArchived) return false;
+    // 远期提醒过滤：非"查看2个月后的提醒"开关，due_at 超过两个月后也隐藏（对 pending/done 列表只影响带提醒的待办）
+    if (!showFarDue && m.due_at && m.due_at > twoMonthsLater) return false;
     if (tab === 'pending') return m.todo_status === 1;
     if (tab === 'done') return m.todo_status === 2;
     // 提醒标签页：所有设过提醒时间的待办（含已完成待办残留的提醒），按是否到期分两边
@@ -173,7 +185,9 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
   // ---- 月历 / 按日期分组列表：只收录设了提醒的待办（含已完成，跟随归档开关） ----
   const auxSize = Math.max(fontSize - 6, 14);
   const contentSize = Math.max(fontSize - 4, 14);
-  const reminderMsgs = messages.filter((m) => (showArchived || m.todo_archived === 0) && m.due_at);
+  const reminderMsgs = messages.filter(
+    (m) => (showArchived || m.todo_archived === 0) && m.due_at && (showFarDue || m.due_at <= twoMonthsLater),
+  );
   const dayMap = new Map<string, CrossGroupMessage[]>();
   reminderMsgs.forEach((m) => {
     const key = (m.due_at as string).slice(0, 10);
@@ -633,6 +647,18 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
           <Archive className="w-3.5 h-3.5" />
           {showArchived ? '含已归档' : '查看已归档'}
         </button>
+        {/* 查看两个月后的远期提醒（默认隐藏，避免每年检查这种事项淹没列表） */}
+        <button
+          onClick={() => setShowFarDue(!showFarDue)}
+          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+            showFarDue
+              ? 'bg-blue-500 text-white'
+              : isDarkMode ? 'bg-gray-700 text-gray-400' : 'bg-white text-gray-500'
+          }`}
+          title="是否显示两个月后的远期提醒（如每年检查这种1年后的事项）"
+        >
+          {showFarDue ? '含远期提醒' : '查看远期提醒'}
+        </button>
       </div>
 
       {selectMode && (
@@ -676,6 +702,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
                       : '没有已到期的提醒'}
             </p>
             {!showArchived && <p className="text-xs mt-1">已归档的待办被隐藏，点击上方"查看已归档"显示</p>}
+            {!showFarDue && <p className="text-xs mt-1">两个月后的远期提醒被隐藏，点击上方"查看远期提醒"显示</p>}
           </div>
         ) : (
           shown.map((m) => (
@@ -700,55 +727,16 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
         )}
       </div>
       {menuEl}
-      {/* 待办备注编辑弹窗：样式与消息备注弹窗一致 */}
-      {noteEdit &&
-        createPortal(
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[90] p-4" onClick={() => setNoteEdit(null)}>
-            <div
-              className={`rounded-2xl shadow-xl w-full max-w-sm ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className={`flex items-center justify-between p-4 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
-                <h3 className={`text-base font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-                  {noteEdit.todo_note ? '修改待办备注' : '添加待办备注'}
-                </h3>
-                <button
-                  onClick={() => setNoteEdit(null)}
-                  className={`p-1.5 rounded-lg ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-400 hover:bg-gray-100'}`}
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="p-4 space-y-3">
-                <textarea
-                  value={noteDraft}
-                  onChange={(e) => setNoteDraft(e.target.value.slice(0, 500))}
-                  rows={3}
-                  autoFocus
-                  placeholder="待办备注，留空清除"
-                  className={`w-full px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-amber-500 resize-none ${
-                    isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'
-                  }`}
-                />
-                <div className="flex items-center justify-end gap-2 pt-1">
-                  <button
-                    onClick={() => setNoteEdit(null)}
-                    className={`px-4 py-2 text-sm rounded-lg ${isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-600 hover:bg-gray-100'}`}
-                  >
-                    取消
-                  </button>
-                  <button
-                    onClick={() => void saveTodoNote()}
-                    className="px-4 py-2 text-sm rounded-lg bg-green-500 text-white hover:bg-green-600"
-                  >
-                    保存
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
+      {/* 待办备注编辑弹窗：与「设为待办」弹窗共用一套界面（含快速时长文本按钮） */}
+      {noteEdit && (
+        <TodoNoteModal
+          isDarkMode={isDarkMode}
+          title={noteEdit.todo_note ? '修改待办备注' : '添加待办备注'}
+          initialNote={noteEdit.todo_note ?? ''}
+          onSave={saveTodoNote}
+          onClose={() => setNoteEdit(null)}
+        />
+      )}
       {dueEdit && (
         <DueEditor
           isDarkMode={isDarkMode}

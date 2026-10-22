@@ -276,9 +276,11 @@ export const SearchPanel = ({ currentGroupId, currentGroupName, groups, isDarkMo
                   isDarkMode ? 'hover:bg-gray-700/60' : 'hover:bg-gray-100'
                 }`}
               >
-                <p className="flex items-center justify-between mb-0.5">
-                  <span className="font-medium text-sm" style={{ color: r.color }}>{r.nickname}</span>
-                  <span className="text-xs text-gray-400">{r.created_at.slice(5, 16)}</span>
+                <p className="flex items-center justify-between mb-0.5 gap-2">
+                  {/* 用户名与日期同字号（text-xs），统一灰色避免彩色干扰 */}
+                  <span className="text-xs text-gray-400 truncate">{r.nickname}</span>
+                  {/* 日期带年份，回看历史更直观；text-xs 与用户名一致 */}
+                  <span className="text-xs text-gray-400 flex-shrink-0">{r.created_at.slice(0, 16)}</span>
                 </p>
                 <p className={`text-sm break-words line-clamp-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                   <Highlight text={r.content} keyword={keyword} />

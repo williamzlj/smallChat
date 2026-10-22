@@ -100,7 +100,8 @@ export const ImageCropModal = ({ src, filename, isDarkMode, onDone, onClose }: P
     const canvas = document.createElement('canvas');
     canvas.width = outW;
     canvas.height = outH;
-    const ctx = canvas.getContext('2d');
+    // willReadFrequently 强制软件渲染画布：安卓 Firefox 硬件加速画布裁剪大图会输出全黑
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);

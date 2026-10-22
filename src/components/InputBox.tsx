@@ -41,7 +41,8 @@ function compressImage(file: File): Promise<{ blob: Blob; filename: string }> {
         const canvas = document.createElement('canvas');
         canvas.width = width;
         canvas.height = height;
-        const ctx = canvas.getContext('2d');
+        // willReadFrequently 强制软件渲染画布：安卓 Firefox 硬件加速画布在缩小绘制大图时会输出全黑
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (!ctx) {
           resolve({ blob: file, filename: file.name });
           return;

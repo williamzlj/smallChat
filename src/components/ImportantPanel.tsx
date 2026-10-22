@@ -53,19 +53,23 @@ export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, 
     void load();
   }, []);
 
-  const handleAction = async (action: PanelAction, msg: CrossGroupMessage) => {
+  const handleAction = async (action: PanelAction, msg: CrossGroupMessage, batchIds?: number[]) => {
+    const ids = batchIds && batchIds.length > 0 ? batchIds : [msg.id];
     try {
       if (action.type === 'color') {
-        await api.messagesSetColor(msg.id, action.color);
-        setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, color_mark: action.color } : m)));
+        await Promise.all(ids.map((id) => api.messagesSetColor(id, action.color)));
+        setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, color_mark: action.color } : m)));
         return;
       } else if (action.type === 'archived') {
-        await api.messagesSetArchived(msg.id, action.archived, 'important');
-        setMessages((prev) => prev.map((m) => (m.id === msg.id ? { ...m, important_archived: action.archived } : m)));
+        await Promise.all(ids.map((id) => api.messagesSetArchived(id, action.archived, 'important')));
+        setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, important_archived: action.archived } : m)));
         return;
       } else if (action.type === 'copy') {
-        await navigator.clipboard.writeText(msgLine(msg));
-        setExportMsg('已复制');
+        const list = batchIds && batchIds.length > 0
+          ? messages.filter((m) => batchIds.includes(m.id))
+          : [msg];
+        await navigator.clipboard.writeText(list.map(msgLine).join('\n'));
+        setExportMsg(batchIds && batchIds.length > 0 ? `已复制 ${list.length} 条` : '已复制');
         setTimeout(() => setExportMsg(''), 1500);
         return;
       } else if (action.type === 'viewContext') {
@@ -95,7 +99,7 @@ export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, 
     [roleOf],
   );
 
-  const { openMenu, menuEl, selTextId, setSelTextId } = usePanelMenu({ isDarkMode, mode: 'important', onAction: handleAction, canManageOf });
+  const { openMenu, menuEl, selTextId, setSelTextId } = usePanelMenu({ isDarkMode, mode: 'important', onAction: handleAction, canManageOf, selectMode, selectedIds: selected });
 
   const filtered = messages.filter(
     (m) => m.color_mark === colorMap[tab] && (showArchived ? true : m.important_archived === 0),

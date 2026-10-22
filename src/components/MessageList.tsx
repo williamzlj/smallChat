@@ -14,6 +14,7 @@ interface Props {
   todoOnly: boolean; // 只看待办
   showCompletedTodo: boolean; // 只看待办时是否同时显示已完成
   importantOnly: boolean; // 只看重要消息（有颜色标记）
+  ledgerOnly: boolean; // 只看财务消息（有记账金额的）
   pinnedMsgIds: number[];
   isDm: boolean;
   peerLastReadId: number; // 私聊对方的已读位置
@@ -38,12 +39,16 @@ interface Props {
   onShareCard: (msg: ChatMessage) => void; // 生成分享卡片（单条）
   onShareCardMulti: (msgs: ChatMessage[]) => void; // 多选消息合成一张分享卡片（按时间正序）
   onForwardMessages: (msgs: ChatMessage[]) => void;
+  onTodoNoteEdit?: (msg: ChatMessage) => void; // 添加/修改待办备注（打开待办备注弹窗）
   isDarkMode: boolean;
   fontSize: number;
   bubbleStyle: 'green' | 'white'; // 我的气泡样式：green 经典绿底 / white 简洁白底
   groupName: string;
   highlightMsgId: number | null; // 面板跳转定位的目标消息
   onHighlightDone: () => void; // 高亮展示完毕回调（清除定位态）
+  foldLen: number; // 长文本折叠字数阈值（0=不折叠，本设备设置）
+  jumpRequest: { ts: number | null; nonce: number } | null; // 时间跳转请求（ts=null=最新一条；nonce 触发重复跳转）
+  onJumpDone: () => void; // 跳转完成回调
 }
 
 function dayLabel(dateStr: string): string {
@@ -56,6 +61,13 @@ function dayLabel(dateStr: string): string {
   if (diff === 0) return '今天';
   if (diff === 1) return '昨天';
   return dateStr.slice(0, 10);
+}
+
+// 时间戳 → 后端 created_at 同格式串（Y-m-d H:i:s），供字典序比较
+function fmtTs(ts: number): string {
+  const d = new Date(ts);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
 // 可被多选转发的消息（排除临时/已删除/转发嵌套）
@@ -74,6 +86,7 @@ export const MessageList = ({
   todoOnly,
   showCompletedTodo,
   importantOnly,
+  ledgerOnly,
   pinnedMsgIds,
   isDm,
   peerLastReadId,
@@ -98,12 +111,16 @@ export const MessageList = ({
   onShareCard,
   onShareCardMulti,
   onForwardMessages,
+  onTodoNoteEdit,
   isDarkMode,
   fontSize,
   bubbleStyle,
   groupName,
   highlightMsgId,
   onHighlightDone,
+  foldLen,
+  jumpRequest,
+  onJumpDone,
 }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -192,12 +209,14 @@ export const MessageList = ({
     onShareCardMulti(list);
   };
 
-  // 只看待办：未完成(1)，勾选后包含已完成(2)；或只看重要消息（红/橙/蓝标记）
+  // 只看待办：未完成(1)，勾选后包含已完成(2)；或只看重要消息（红/橙/蓝标记）；或只看财务消息（带记账金额）
   const shown = importantOnly
     ? messages.filter((m) => m.color_mark > 0)
     : todoOnly
       ? messages.filter((m) => m.todo_status === 1 || (showCompletedTodo && m.todo_status === 2))
-      : messages;
+      : ledgerOnly
+        ? messages.filter((m) => m.amount_kind > 0)
+        : messages;
 
   // 监听滚动位置，决定是否"贴着底部"
   const handleScroll = () => {
@@ -227,6 +246,36 @@ export const MessageList = ({
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, highlightMsgId, messages]);
+
+  // 时间跳转（下拉菜单/双击群标题）：ts=null 跳最新一条；否则跳到第一条 ≥ ts 的消息（3天前回看）。
+  // 目标尚未加载时自动连续加载历史，直到找到或到达最早一条
+  useEffect(() => {
+    if (!jumpRequest || loading) return;
+    const cutoff = jumpRequest.ts === null ? null : fmtTs(jumpRequest.ts);
+    if (cutoff === null) {
+      // 跳到最新：滚到底并恢复贴底
+      stickToBottomRef.current = true;
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      onJumpDone();
+      return;
+    }
+    // 反向跳转：立即停用贴底自动滚动，避免加载历史时被拉回底部
+    stickToBottomRef.current = false;
+    const target = messages.find((m) => m.id > 0 && m.created_at >= cutoff);
+    if (target) {
+      document.getElementById(`msg-${target.id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      onJumpDone();
+    } else if (hasMore) {
+      if (!loadingMore) onLoadMore(); // 目标在更早的历史里，继续加载（本 effect 会在新数据到达后再次执行）
+    } else {
+      // 已到最早一条仍没找到（可能 3 天前早于建群），跳到最早一条
+      const first = messages.find((m) => m.id > 0);
+      stickToBottomRef.current = false;
+      if (first) document.getElementById(`msg-${first.id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      onJumpDone();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpRequest, messages, hasMore, loadingMore, loading]);
 
   // 新消息：贴底时自动滚；加载历史时保持原位置（靠浏览器锚点，简单处理）
   useEffect(() => {
@@ -298,6 +347,8 @@ export const MessageList = ({
             </div>
           ) : shown.length === 0 && importantOnly ? (
             <div className="text-center text-sm text-gray-400 py-10">没有重要消息，右键消息可标记红/橙/蓝</div>
+          ) : shown.length === 0 && ledgerOnly ? (
+            <div className="text-center text-sm text-gray-400 py-10">当前会话没有财务消息（带记账金额的消息）</div>
           ) : (
             shown.map((m, idx) => {
               const prevDate = idx > 0 ? shown[idx - 1].created_at.slice(0, 10) : '';
@@ -358,6 +409,8 @@ export const MessageList = ({
                         onTogglePin={onTogglePin}
                         onShareCard={onShareCard}
                         onEnterSelect={enterSelect}
+                        onTodoNoteEdit={onTodoNoteEdit}
+                        foldLen={foldLen}
                         isDarkMode={isDarkMode}
                         fontSize={fontSize}
                         bubbleStyle={bubbleStyle}

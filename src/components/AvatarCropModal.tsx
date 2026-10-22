@@ -84,7 +84,8 @@ export const AvatarCropModal = ({ onDone, onClose, isDarkMode }: AvatarCropModal
     const canvas = document.createElement('canvas');
     canvas.width = OUT;
     canvas.height = OUT;
-    const ctx = canvas.getContext('2d');
+    // willReadFrequently 强制软件渲染画布：安卓 Firefox 硬件加速画布裁剪大图会输出全黑
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, OUT, OUT);

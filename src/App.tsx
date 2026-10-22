@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Menu, X, Info, Hash, Search, ListTodo, Pin, MessageCircle, Flag, CheckCheck, Megaphone, ArrowLeft, Wallet } from 'lucide-react';
+﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Menu, X, Info, Hash, Search, ListTodo, Pin, MessageCircle, Flag, CheckCheck, Megaphone, ArrowLeft, Wallet, Banknote, ChevronDown, Check, ChevronsDown, History } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { AvatarCropModal } from './components/AvatarCropModal';
 import { setCachedAvatar } from './api/avatarCache';
@@ -13,6 +13,7 @@ import { GroupInfoModal } from './components/Group/GroupInfoModal';
 import { FriendsPanel } from './components/FriendsPanel';
 import { FriendDetail } from './components/FriendDetail';
 import { SearchPanel } from './components/SearchPanel';
+import { TodoNoteModal } from './components/TodoNoteModal';
 import { ForwardModal } from './components/ForwardModal';
 import { ShareCardModal } from './components/ShareCardModal';
 import { TodoPanel } from './components/TodoPanel';
@@ -87,6 +88,28 @@ export default function App() {
   const [todoOnly, setTodoOnly] = useState(false);
   const [showCompletedTodo, setShowCompletedTodo] = useState(false);
   const [importantOnly, setImportantOnly] = useState(false);
+  // ===== 本设备设置（仅存 localStorage，不同步服务器）=====
+  // 长文本默认折叠的字数阈值（0=不折叠），默认 240
+  const [foldLen, setFoldLen] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem('smallchat-fold-len') ?? '', 10);
+    return Number.isFinite(v) && v >= 0 ? v : 240;
+  });
+  // 设为待办时是否弹出「待办备注窗口」（可快速输入预计时长），默认关闭
+  const [todoNotePopup, setTodoNotePopup] = useState<boolean>(() => localStorage.getItem('smallchat-todo-note-popup') === '1');
+  // 只看财务消息（带记账金额的消息）
+  const [ledgerOnly, setLedgerOnly] = useState(false);
+  // 时间跳转请求：ts=null 跳最新一条；否则跳到第一条 ≥ ts 的消息（如 3 天前回看）
+  const [jumpRequest, setJumpRequest] = useState<{ ts: number | null; nonce: number } | null>(null);
+  // 群头部下拉菜单开关
+  const [headerMenu, setHeaderMenu] = useState(false);
+  // 待办备注弹窗：设为待办（弹出开关开启时）或添加/修改待办备注时打开
+  const [todoNoteEdit, setTodoNoteEdit] = useState<{ msg: ChatMessage; status: number } | null>(null);
+  useEffect(() => {
+    localStorage.setItem('smallchat-fold-len', String(foldLen));
+  }, [foldLen]);
+  useEffect(() => {
+    localStorage.setItem('smallchat-todo-note-popup', todoNotePopup ? '1' : '0');
+  }, [todoNotePopup]);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [pinnedMessages, setPinnedMessages] = useState<ChatMessage[]>([]);
   const [privateNotes, setPrivateNotes] = useState<Record<number, string>>({});
@@ -185,7 +208,11 @@ export default function App() {
   useEffect(() => {
     setReplyTo(null);
     setTodoOnly(false);
+    setImportantOnly(false);
     setShowCompletedTodo(false);
+    setLedgerOnly(false);
+    setHeaderMenu(false);
+    setJumpRequest(null);
     setPeerLastRead(0);
     lastMarkedRef.current = 0;
     setMembers([]);
@@ -309,6 +336,32 @@ export default function App() {
     return { type: 'expense', category: '', hint: '' };
   }, [amountEditMsg, messages]);
 
+  // 以下函数（含 useCallback）必须放在启动屏 isLoading return 之前，避免 Hook 数量不一致
+  // 添加/修改待办备注（消息菜单）：打开待办备注弹窗（保持原待办状态）
+  const handleTodoNoteEdit = useCallback((msg: ChatMessage) => {
+    setTodoNoteEdit({ msg, status: msg.todo_status > 0 ? msg.todo_status : 1 });
+  }, []);
+
+  // 群头部下拉菜单项（普通函数，引用 state 故也放顶部）
+  const headerMenuItem = (icon: React.ReactNode, label: string, active: boolean, onClick: () => void) => (
+    <button
+      key={label}
+      onClick={() => {
+        setHeaderMenu(false);
+        onClick();
+      }}
+      className={`w-full flex items-center justify-between gap-3 px-3.5 py-2 text-sm text-left transition-colors ${
+        isDarkMode ? 'text-gray-200 hover:bg-gray-600' : 'text-gray-700 hover:bg-gray-100'
+      }`}
+    >
+      <span className="flex items-center gap-2.5">
+        {icon}
+        <span>{label}</span>
+      </span>
+      {active && <Check className="w-4 h-4 text-green-500 flex-shrink-0" />}
+    </button>
+  );
+
   // 启动屏
   if (isLoading) {
     return (
@@ -353,8 +406,26 @@ export default function App() {
   };
 
   const handleSetTodo = async (msg: ChatMessage, status: number, note?: string) => {
+    // 开启「弹出待办备注窗口」后，设为待办先弹窗填备注/预计时长，保存时才真正提交
+    if (status === 1 && todoNotePopup && note === undefined) {
+      setTodoNoteEdit({ msg, status });
+      return;
+    }
     try {
       await setTodoStatus(msg.id, status, note);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '操作失败');
+    }
+  };
+
+  // 待办备注弹窗保存：设为待办时提交状态+备注；添加/修改备注时保持原状态
+  const handleTodoNoteSave = async (note: string) => {
+    const cur = todoNoteEdit;
+    if (!cur) return;
+    setTodoNoteEdit(null);
+    try {
+      await setTodoStatus(cur.msg.id, cur.status, note);
+      showToast(cur.msg.todo_status === 0 ? '已设为待办' : '待办备注已保存');
     } catch (e) {
       alert(e instanceof Error ? e.message : '操作失败');
     }
@@ -757,7 +828,7 @@ export default function App() {
                 >
                   {sidebarVisible ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </button>
-                <div className="min-w-0">
+                <div className="min-w-0" onDoubleClick={() => setJumpRequest({ ts: null, nonce: Date.now() })} title="双击跳到最新消息">
                   <h2 className={`text-base font-semibold truncate ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
                     {groupTitle}
                   </h2>
@@ -768,79 +839,110 @@ export default function App() {
                 </div>
               </div>
               <div className="flex items-center flex-shrink-0">
+                {/* 顶部功能收纳为下拉菜单，保持头部清爽 */}
+                <div className="relative">
+                  <button
+                    onClick={() => setHeaderMenu((v) => !v)}
+                    className={`relative p-2 rounded-lg ${
+                      isDarkMode
+                        ? 'text-gray-400 hover:text-green-400 hover:bg-gray-700'
+                        : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
+                    }`}
+                    title="更多功能（待办/重要/财务/搜索等）"
+                  >
+                    <ChevronDown className={`w-5 h-5 transition-transform ${headerMenu ? 'rotate-180' : ''}`} />
+                    {(todoOnly || importantOnly || ledgerOnly) && (
+                      <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-500" />
+                    )}
+                  </button>
+                  {headerMenu && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setHeaderMenu(false)} />
+                      <div
+                        className={`absolute right-0 top-full mt-1 z-50 rounded-xl shadow-xl border py-1.5 min-w-[200px] ${
+                          isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
+                        }`}
+                      >
+                        {headerMenuItem(
+                          <ListTodo className="w-4 h-4 text-amber-500" />,
+                          '只看待办',
+                          todoOnly,
+                          () => {
+                            setTodoOnly(!todoOnly);
+                            if (!todoOnly) setImportantOnly(false);
+                            if (!todoOnly) setLedgerOnly(false);
+                          },
+                        )}
+                        {todoOnly &&
+                          headerMenuItem(
+                            <CheckCheck className="w-4 h-4 text-green-500" />,
+                            showCompletedTodo ? '隐藏已完成待办' : '同时显示已完成待办',
+                            showCompletedTodo,
+                            () => setShowCompletedTodo(!showCompletedTodo),
+                          )}
+                        {headerMenuItem(
+                          <Flag className="w-4 h-4 text-red-500" />,
+                          '只看重要消息',
+                          importantOnly,
+                          () => {
+                            setImportantOnly(!importantOnly);
+                            if (!importantOnly) setTodoOnly(false);
+                            if (!importantOnly) setLedgerOnly(false);
+                          },
+                        )}
+                        {ledgerEnabled &&
+                          headerMenuItem(
+                            <Banknote className="w-4 h-4 text-rose-500" />,
+                            '只看财务消息',
+                            ledgerOnly,
+                            () => {
+                              setLedgerOnly(!ledgerOnly);
+                              if (!ledgerOnly) setTodoOnly(false);
+                              if (!ledgerOnly) setImportantOnly(false);
+                            },
+                          )}
+                        <div className={`my-1.5 border-t ${isDarkMode ? 'border-gray-600' : 'border-gray-200'}`} />
+                        {headerMenuItem(<ChevronsDown className="w-4 h-4 text-green-500" />, '跳到最新消息', false, () =>
+                          setJumpRequest({ ts: null, nonce: Date.now() }),
+                        )}
+                        {headerMenuItem(
+                          <History className="w-4 h-4 text-blue-500" />,
+                          '回看3天前的消息',
+                          false,
+                          () => {
+                            const d = new Date();
+                            d.setDate(d.getDate() - 3);
+                            d.setHours(0, 0, 0, 0); // 从3天前的当天 0 点开始阅读
+                            setJumpRequest({ ts: d.getTime(), nonce: Date.now() });
+                          },
+                        )}
+                        <div className={`my-1.5 border-t ${isDarkMode ? 'border-gray-600' : 'border-gray-200'}`} />
+                        {ledgerEnabled &&
+                          headerMenuItem(<Wallet className="w-4 h-4 text-rose-500" />, '记账 / 开支汇总', false, () => setLedgerOpen(true))}
+                        {headerMenuItem(
+                          <Search className="w-4 h-4 text-green-500" />,
+                          '搜索聊天记录',
+                          false,
+                          () => {
+                            setSearchMode('message');
+                            setSearchScopeAll(false);
+                            setSearchOpen(true);
+                          },
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+                {/* 群聊信息（Info 图标）单独显示，不收纳进下拉菜单 */}
                 <button
                   onClick={() => {
-                    setTodoOnly(!todoOnly);
-                    if (!todoOnly) setImportantOnly(false);
+                    setHeaderMenu(false);
+                    setShowGroupInfo(true);
                   }}
-                  className={`p-2 rounded-lg ${
-                    todoOnly
-                      ? 'text-amber-500 bg-amber-50 dark:bg-gray-700'
-                      : isDarkMode
-                        ? 'text-gray-400 hover:text-amber-400 hover:bg-gray-700'
-                        : 'text-gray-500 hover:text-amber-500 hover:bg-amber-50'
-                  }`}
-                  title={todoOnly ? '查看全部消息' : '只看待办'}
-                >
-                  <ListTodo className="w-5 h-5" />
-                </button>
-                {todoOnly && (
-                  <button
-                    onClick={() => setShowCompletedTodo(!showCompletedTodo)}
-                    className={`p-2 rounded-lg ${
-                      showCompletedTodo
-                        ? 'text-green-600 bg-green-50 dark:bg-gray-700'
-                        : isDarkMode
-                          ? 'text-gray-400 hover:text-green-400 hover:bg-gray-700'
-                          : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
-                    }`}
-                    title={showCompletedTodo ? '隐藏已完成待办' : '同时显示已完成待办'}
-                  >
-                    <CheckCheck className="w-5 h-5" />
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setImportantOnly(!importantOnly);
-                    if (!importantOnly) setTodoOnly(false);
-                  }}
-                  className={`p-2 rounded-lg ${
-                    importantOnly
-                      ? 'text-red-500 bg-red-50 dark:bg-gray-700'
-                      : isDarkMode
-                        ? 'text-gray-400 hover:text-red-400 hover:bg-gray-700'
-                        : 'text-gray-500 hover:text-red-500 hover:bg-red-50'
-                  }`}
-                  title={importantOnly ? '查看全部消息' : '只看重要消息'}
-                >
-                  <Flag className="w-5 h-5" />
-                </button>
-                {ledgerEnabled && (
-                  <button
-                    onClick={() => setLedgerOpen(true)}
-                    className={`p-2 rounded-lg ${
-                      isDarkMode ? 'text-gray-400 hover:text-rose-400 hover:bg-gray-700' : 'text-gray-500 hover:text-rose-500 hover:bg-rose-50'
-                    }`}
-                    title="记账 / 开支汇总"
-                  >
-                    <Wallet className="w-5 h-5" />
-                  </button>
-                )}
-                <button
-                  onClick={() => { setSearchMode('message'); setSearchScopeAll(false); setSearchOpen(true); }}
                   className={`p-2 rounded-lg ${
                     isDarkMode ? 'text-gray-400 hover:text-green-400 hover:bg-gray-700' : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
                   }`}
-                  title="搜索聊天记录"
-                >
-                  <Search className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => setShowGroupInfo(true)}
-                  className={`p-2 rounded-lg ${
-                    isDarkMode ? 'text-gray-400 hover:text-green-400 hover:bg-gray-700' : 'text-gray-500 hover:text-green-600 hover:bg-green-50'
-                  }`}
-                  title="群聊信息"
+                  title={currentGroup.is_dm === 1 ? '聊天信息' : '群聊信息'}
                 >
                   <Info className="w-5 h-5" />
                 </button>
@@ -905,6 +1007,7 @@ export default function App() {
               todoOnly={todoOnly}
               showCompletedTodo={showCompletedTodo}
               importantOnly={importantOnly}
+              ledgerOnly={ledgerOnly}
               pinnedMsgIds={pinnedMsgIds}
               isDm={currentGroup.is_dm === 1}
               peerLastReadId={peerLastRead}
@@ -941,6 +1044,10 @@ export default function App() {
               onShareCard={(m) => setShareCardMsgs([m])}
               onShareCardMulti={setShareCardMsgs}
               onForwardMessages={setForwardMsgs}
+              onTodoNoteEdit={handleTodoNoteEdit}
+              foldLen={foldLen}
+              jumpRequest={jumpRequest}
+              onJumpDone={() => setJumpRequest(null)}
               isDarkMode={isDarkMode}
               fontSize={fontSize}
               bubbleStyle={bubbleStyle}
@@ -1013,6 +1120,10 @@ export default function App() {
           onFontSizeChange={setFontSize}
           bubbleStyle={bubbleStyle}
           onBubbleStyleChange={setBubbleStyle}
+          foldLen={foldLen}
+          onFoldLenChange={setFoldLen}
+          todoNotePopup={todoNotePopup}
+          onTodoNotePopupChange={setTodoNotePopup}
           onUpdate={updateProfile}
           onAvatarChanged={setUserAvatarVer}
           onLogout={logout}
@@ -1092,6 +1203,17 @@ export default function App() {
           groupName={currentGroup && dueEditMsg.group_id === currentGroup.id ? groupTitle : undefined}
           onClose={() => setDueEditId(null)}
           onSaved={(due) => void handleSaveDue(dueEditMsg.id, due)}
+        />
+      )}
+
+      {/* 待办备注弹窗：设为待办（弹出开关开启）/添加修改待办备注共用，含快速时长文本 */}
+      {todoNoteEdit && (
+        <TodoNoteModal
+          isDarkMode={isDarkMode}
+          title={todoNoteEdit.msg.todo_status === 0 ? '设为待办事项' : '修改待办备注'}
+          initialNote={todoNoteEdit.msg.todo_note ?? ''}
+          onSave={handleTodoNoteSave}
+          onClose={() => setTodoNoteEdit(null)}
         />
       )}
 

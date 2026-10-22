@@ -39,6 +39,8 @@ interface Props {
   onDelegateAmount?: (msg: ChatMessage) => void; // 普通成员委托群主/副群主代为记账
   ledgerEnabled: boolean; // 该会话是否开启财务记账（未开启则不显示金额徽章与记账入口）
   onEnterSelect: (msg: ChatMessage) => void;
+  onTodoNoteEdit?: (msg: ChatMessage) => void; // 添加/修改待办备注（统一走待办备注弹窗，不再用 prompt）
+  foldLen: number; // 长文本默认折叠的字数阈值（0=不折叠；本设备设置）
   isDarkMode: boolean;
   fontSize: number;
   bubbleStyle?: 'green' | 'white'; // 我的气泡样式（默认 green 经典绿底；white 时自己的气泡与对方一致白底黑字）
@@ -301,6 +303,8 @@ export const MessageBubble = ({
   onDelegateAmount,
   ledgerEnabled,
   onEnterSelect,
+  onTodoNoteEdit,
+  foldLen,
   isDarkMode,
   fontSize,
   bubbleStyle = 'green',
@@ -438,6 +442,11 @@ export const MessageBubble = ({
 
   const editNote = () => {
     setShowMenu(false);
+    // 统一走待办备注弹窗（含快速时长文本）；未传回调时退回简易输入
+    if (onTodoNoteEdit) {
+      onTodoNoteEdit(message);
+      return;
+    }
     const note = window.prompt('待办备注（留空清除备注）', message.todo_note ?? '');
     if (note === null) return;
     onSetTodo(message, message.todo_status, note.trim());
@@ -470,8 +479,8 @@ export const MessageBubble = ({
     }
   })();
 
-  // 长文本（超过 200 字）默认折叠 6 行，避免一条消息占满整个屏幕
-  const isLongText = message.type === 'text' && message.content.length > 200;
+  // 长文本折叠：超过设置的字数阈值默认折叠 6 行（阈值 0=不折叠），避免一条消息占满整个屏幕
+  const isLongText = foldLen > 0 && message.type === 'text' && message.content.length > foldLen;
 
   const menuBtn = `w-full flex items-center space-x-2 px-3 py-2 text-sm ${
     isDarkMode ? 'text-gray-200 hover:bg-gray-600' : 'text-gray-700 hover:bg-gray-100'
@@ -685,7 +694,7 @@ export const MessageBubble = ({
               </div>
             )}
 
-            {/* 文本（超过 200 字默认折叠 6 行，点击展开全文） */}
+            {/* 文本（超过折叠字数阈值默认折叠 6 行，点击展开全文） */}
             {message.type === 'text' && message.content && (
               <>
                 <p

@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import {
   Square, CheckSquare, Archive, ArchiveRestore, MessageSquare,
   Palette, Copy, ExternalLink, Loader2, TextSelect, BellRing, BellOff, MessagesSquare, StickyNote,
+  Circle, CheckCircle,
 } from 'lucide-react';
 import { CrossGroupMessage } from '../api/types';
 
@@ -49,9 +50,12 @@ interface MenuState {
 interface UsePanelMenuOptions {
   isDarkMode: boolean;
   mode: 'todo' | 'important';
-  onAction: (action: PanelAction, msg: CrossGroupMessage) => void;
+  // 可选 selectedIds：多选模式下右键触发时，onAction 会收到批量 id 数组
+  onAction: (action: PanelAction, msg: CrossGroupMessage, selectedIds?: number[]) => void;
   // 条目所在群的管理能力判定（群主/副群主或私聊=true；普通成员/观察者=false）
   canManageOf: (msg: CrossGroupMessage) => boolean;
+  selectMode: boolean;
+  selectedIds: Set<number>;
 }
 
 // 菜单触发点：鼠标右键事件或触摸长按坐标
@@ -63,7 +67,7 @@ export type MenuTrigger = {
 };
 
 // 通用右键菜单 Hook
-export const usePanelMenu = ({ isDarkMode, mode, onAction, canManageOf }: UsePanelMenuOptions) => {
+export const usePanelMenu = ({ isDarkMode, mode, onAction, canManageOf, selectMode, selectedIds }: UsePanelMenuOptions) => {
   const [menu, setMenu] = useState<MenuState | null>(null);
   // 文本选择模式：只能同时给一条消息开启（该消息临时允许选中文字）
   const [selTextId, setSelTextId] = useState<number | null>(null);
@@ -112,9 +116,14 @@ export const usePanelMenu = ({ isDarkMode, mode, onAction, canManageOf }: UsePan
       setMenu(null);
       return;
     }
-    onAction(action, menu.msg);
+    // 批量操作：selectMode + selectedIds.size > 1 时把 id 数组传给 onAction
+    const ids = selectMode && selectedIds.size > 1 ? Array.from(selectedIds) : undefined;
+    onAction(action, menu.msg, ids);
     setMenu(null);
   };
+
+  // 批量模式下（selectMode + 选中 > 1 条）隐藏单条专属操作（每条内容不同，无法统一批量）
+  const isBatch = selectMode && selectedIds.size > 1;
 
   // 管理类菜单项：普通成员/观察者只可看不可操作（保留渲染置灰禁用，避免布局跳动）
   const manage = menu ? canManageOf(menu.msg) : false;
@@ -156,18 +165,23 @@ export const usePanelMenu = ({ isDarkMode, mode, onAction, canManageOf }: UsePan
           }`}
           style={{ left: menu.x, top: menu.y }}
         >
+          {isBatch && (
+            <div className={`px-3.5 py-1.5 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              已选 {selectedIds.size} 条，批量操作将作用于全部选中项
+            </div>
+          )}
           {mode === 'todo' ? (
             <>
               {/* 对当前状态无效的操作不显示：未完成的不显示「标记为未完成」，已完成的不显示「标记为已完成」 */}
-              {menu.msg.todo_status !== 1 &&
-                item(<Square className="w-4 h-4 text-amber-500" />, '标记为未完成', { type: 'todoStatus', status: 1 }, false, !manage)}
-              {menu.msg.todo_status !== 2 &&
-                item(<CheckSquare className="w-4 h-4 text-green-500" />, '标记为已完成', { type: 'todoStatus', status: 2 }, false, !manage)}
-              {menu.msg.todo_status === 1 &&
+              {(menu.msg.todo_status !== 1 || isBatch) &&
+                item(<Square className="w-4 h-4 text-amber-500" />, `标记为未完成${isBatch ? `（${selectedIds.size} 条）` : ''}`, { type: 'todoStatus', status: 1 }, false, !manage)}
+              {(menu.msg.todo_status !== 2 || isBatch) &&
+                item(<CheckSquare className="w-4 h-4 text-green-500" />, `标记为已完成${isBatch ? `（${selectedIds.size} 条）` : ''}`, { type: 'todoStatus', status: 2 }, false, !manage)}
+              {!isBatch && menu.msg.todo_status === 1 &&
                 (menu.msg.due_at
                   ? item(<BellOff className="w-4 h-4 text-gray-500" />, '修改/清除提醒', { type: 'setDue' }, false, !manage)
                   : item(<BellRing className="w-4 h-4 text-amber-500" />, '设置到点提醒', { type: 'setDue' }, false, !manage))}
-              {item(
+              {!isBatch && item(
                 <StickyNote className="w-4 h-4 text-amber-500" />,
                 menu.msg.todo_note ? '修改待办备注' : '添加待办备注',
                 { type: 'todoNote' },
@@ -175,16 +189,16 @@ export const usePanelMenu = ({ isDarkMode, mode, onAction, canManageOf }: UsePan
                 !manage,
               )}
               {menu.msg.todo_archived === 1
-                ? item(<ArchiveRestore className="w-4 h-4 text-blue-500" />, '恢复为活跃', { type: 'archived', archived: 0 }, false, !manage)
-                : item(<Archive className="w-4 h-4 text-gray-500" />, '标记为已归档', { type: 'archived', archived: 1 }, false, !manage)}
-              {item(<MessageSquare className="w-4 h-4 text-gray-500" />, '转为普通消息', { type: 'normal' }, false, !manage)}
+                ? item(<ArchiveRestore className="w-4 h-4 text-blue-500" />, `恢复为活跃${isBatch ? `（${selectedIds.size} 条）` : ''}`, { type: 'archived', archived: 0 }, false, !manage)
+                : item(<Archive className="w-4 h-4 text-gray-500" />, `标记为已归档${isBatch ? `（${selectedIds.size} 条）` : ''}`, { type: 'archived', archived: 1 }, false, !manage)}
+              {item(<MessageSquare className="w-4 h-4 text-gray-500" />, `转为普通消息${isBatch ? `（${selectedIds.size} 条）` : ''}`, { type: 'normal' }, false, !manage)}
             </>
           ) : (
             <>
               {/* 颜色标记：一行 4 个图标（节省菜单高度）；无管理权限时整行置灰禁用 */}
               <div
                 className={`px-3.5 py-2 flex items-center gap-2.5 ${manage ? '' : 'opacity-40'}`}
-                title={manage ? undefined : NO_PERM_TITLE}
+                title={manage ? (isBatch ? `为全部 ${selectedIds.size} 条设置颜色标记` : undefined) : NO_PERM_TITLE}
               >
                 <Palette className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
                 {COLOR_OPTS.map((o) => (
@@ -192,24 +206,24 @@ export const usePanelMenu = ({ isDarkMode, mode, onAction, canManageOf }: UsePan
                     key={o.color}
                     disabled={!manage}
                     onClick={() => fire({ type: 'color', color: o.color })}
-                    title={manage ? o.title : NO_PERM_TITLE}
+                    title={manage ? (isBatch ? `为全部 ${selectedIds.size} 条设置${o.title}` : o.title) : NO_PERM_TITLE}
                     className={`w-6 h-6 rounded-full ${o.bg} ring-1 ring-black/10 transition-transform flex-shrink-0 ${
                       manage ? 'hover:scale-110' : 'cursor-not-allowed'
                     }`}
                   />
                 ))}
               </div>
-              {item(<Palette className="w-4 h-4 text-gray-400" />, '取消颜色标记', { type: 'color', color: 0 }, false, !manage)}
+              {item(<Palette className="w-4 h-4 text-gray-400" />, `取消颜色标记${isBatch ? `（${selectedIds.size} 条）` : ''}`, { type: 'color', color: 0 }, false, !manage)}
               {menu.msg.important_archived === 1
-                ? item(<ArchiveRestore className="w-4 h-4 text-blue-500" />, '恢复为活跃', { type: 'archived', archived: 0 }, false, !manage)
-                : item(<Archive className="w-4 h-4 text-gray-500" />, '标记为已归档', { type: 'archived', archived: 1 }, false, !manage)}
+                ? item(<ArchiveRestore className="w-4 h-4 text-blue-500" />, `恢复为活跃${isBatch ? `（${selectedIds.size} 条）` : ''}`, { type: 'archived', archived: 0 }, false, !manage)
+                : item(<Archive className="w-4 h-4 text-gray-500" />, `标记为已归档${isBatch ? `（${selectedIds.size} 条）` : ''}`, { type: 'archived', archived: 1 }, false, !manage)}
             </>
           )}
           <div className={`my-1 border-t ${isDarkMode ? 'border-gray-600' : 'border-gray-200'}`} />
-          {item(<Copy className="w-4 h-4 text-gray-500" />, '复制消息（带时间）', { type: 'copy' })}
-          {item(<TextSelect className="w-4 h-4 text-gray-500" />, '选择', { type: 'selectText' })}
-          {item(<MessagesSquare className="w-4 h-4 text-blue-500" />, '查看该消息上下文', { type: 'viewContext' })}
-          {item(<ExternalLink className="w-4 h-4 text-gray-500" />, '在聊天中查看', { type: 'view' })}
+          {item(<Copy className="w-4 h-4 text-gray-500" />, isBatch ? `合并复制（${selectedIds.size} 条）` : '复制消息（带时间）', { type: 'copy' })}
+          {!isBatch && item(<TextSelect className="w-4 h-4 text-gray-500" />, '选择', { type: 'selectText' })}
+          {!isBatch && item(<MessagesSquare className="w-4 h-4 text-blue-500" />, '查看该消息上下文', { type: 'viewContext' })}
+          {!isBatch && item(<ExternalLink className="w-4 h-4 text-gray-500" />, '在聊天中查看', { type: 'view' })}
         </div>,
         document.body,
       )
@@ -326,9 +340,9 @@ export const PanelItem = ({
       {selectMode && (
         <div className="absolute left-2 top-2.5">
           {selected ? (
-            <CheckSquare className="w-4 h-4 text-green-500" />
+            <CheckCircle className="w-4 h-4 text-green-500" />
           ) : (
-            <Square className="w-4 h-4 text-gray-400" />
+            <Circle className="w-4 h-4 text-gray-400" />
           )}
         </div>
       )}
@@ -347,89 +361,167 @@ export const PanelItem = ({
             </button>
           </div>
         )}
-        <div className="flex items-center gap-1.5 mb-1">
-          {mode === 'todo' && (
-            msg.todo_status === 1 ? (
-              <Square className={`w-4 h-4 flex-shrink-0 ${archived ? 'text-gray-400' : 'text-amber-500'}`} />
+        {/* 左侧固定 gutter（w-4）=待办勾选框 / 重要彩色圆点；右侧正文+备注+次要信息全部左对齐 */}
+        <div className="flex items-start gap-1.5">
+          {/* gutter 列：勾选框(待办) / 彩色圆点(重要)。外层 flex items-start 下均从顶部开始 */}
+          <div className="w-4 flex-shrink-0">
+            {mode === 'todo' ? (
+              msg.todo_status === 1 ? (
+                <Square
+                  className={`w-4 h-4 ${archived ? 'text-gray-400' : 'text-amber-500'}`}
+                  style={{ marginTop: '3px' }}
+                />
+              ) : (
+                <CheckSquare
+                  className={`w-4 h-4 ${archived ? 'text-gray-400' : 'text-green-500'}`}
+                  style={{ marginTop: '3px' }}
+                />
+              )
+            ) : msg.color_mark > 0 ? (
+              // 重要消息：左侧带颜色圆点，白色细边框；归档后灰化；mt-0 保证与正文第一行顶对齐
+              <span
+                className="w-3 h-3 rounded-full inline-block mt-0 ring-2 ring-white"
+                style={{
+                  backgroundColor: archived
+                    ? '#9CA3AF'
+                    : msg.color_mark === 1
+                      ? '#EF4444'
+                      : msg.color_mark === 2
+                        ? '#F97316'
+                        : msg.color_mark === 6
+                          ? '#EAB308'
+                          : msg.color_mark === 7
+                            ? '#22C55E'
+                            : msg.color_mark === 3
+                              ? '#3B82F6'
+                              : msg.color_mark === 4
+                                ? '#6B7280'
+                                : msg.color_mark === 5
+                                  ? '#8B5CF6'
+                                  : '#9CA3AF',
+                }}
+              />
             ) : (
-              <CheckSquare className={`w-4 h-4 flex-shrink-0 ${archived ? 'text-gray-400' : 'text-green-500'}`} />
-            )
-          )}
-          {/* 消息日期（默认 YYYY-MM-DD）：放最左边，紧跟图标右侧 */}
-          <span className="text-gray-400 flex-shrink-0" style={{ fontSize: `${auxSize}px` }} title={`消息日期：${msg.created_at.slice(0, 10)}`}>
-            {msg.created_at.slice(0, 10)}
-          </span>
-          {archived && (
-            <span className="flex items-center gap-0.5 flex-shrink-0">
-              <Archive className="w-3.5 h-3.5 text-gray-400" />
-              <span className="text-gray-400" style={{ fontSize: `${auxSize}px` }}>[已归档]</span>
-            </span>
-          )}
-          <span className="text-gray-400 truncate flex-1" style={{ fontSize: `${auxSize}px` }} title={`「${msg.group_name}」`}>
-            「{msg.group_name}」
-          </span>
-          {/* 普通成员的「委托」入口：切到该群会话并预填委托文案 */}
-          {canDelegate && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelegate(msg);
-              }}
-              className={`flex-shrink-0 px-1.5 py-0.5 rounded-md font-medium ${isDarkMode ? 'text-green-400 hover:bg-gray-600' : 'text-green-600 hover:bg-green-50'}`}
-              style={{ fontSize: `${auxSize}px` }}
-              title="委托群主或副群主处理"
-            >
-              委托
-            </button>
-          )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onViewContext(msg);
-            }}
-            className={`flex-shrink-0 p-1 rounded ${isDarkMode ? 'text-gray-500 hover:text-blue-400' : 'text-gray-400 hover:text-blue-600'}`}
-            title="查看该消息上下文（前后各5条）"
-          >
-            <MessagesSquare className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onView(msg);
-            }}
-            className={`flex-shrink-0 p-1 rounded ${isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
-            title="在聊天中查看"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </button>
+              <span className="w-4 h-4" />
+            )}
+          </div>
+
+          {/* 右侧：正文 + 备注 + 次要信息（全部左对齐；已归档则整体灰化） */}
+          <div className="flex-1 min-w-0 space-y-1">
+            {/* 行 A：消息正文（最多 3 行）+ 右侧操作按钮 */}
+            <div className="flex items-start gap-1.5">
+              <p
+                className={`break-words flex-1 min-w-0 ${selectable ? '' : 'line-clamp-3'} ${
+                  archived
+                    ? 'text-gray-400 dark:text-gray-500'
+                    : isDarkMode
+                      ? 'text-gray-200'
+                      : 'text-gray-700'
+                }`}
+                style={{ fontSize: `${contentSize}px` }}
+              >
+                {msgText(msg)}
+              </p>
+              {/* 右侧操作按钮 */}
+              <div className="flex items-center gap-0.5 flex-shrink-0 -mt-0.5">
+                {canDelegate && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelegate(msg);
+                    }}
+                    className={`px-1.5 py-0.5 rounded-md font-medium ${isDarkMode ? 'text-green-400 hover:bg-gray-600' : 'text-green-600 hover:bg-green-50'}`}
+                    style={{ fontSize: `${auxSize}px` }}
+                    title="委托群主或副群主处理"
+                  >
+                    委托
+                  </button>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewContext(msg);
+                  }}
+                  className={`p-1 rounded ${isDarkMode ? 'text-gray-500 hover:text-blue-400' : 'text-gray-400 hover:text-blue-600'}`}
+                  title="查看该消息上下文（前后各5条）"
+                >
+                  <MessagesSquare className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onView(msg);
+                  }}
+                  className={`p-1 rounded ${isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
+                  title="在聊天中查看"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* 行 B：备注类（提醒/待办备注/公共备注/我的备注），紧贴正文；已归档则灰化 */}
+            {msg.due_at &&
+              (isOverdueTodo(msg.due_at, msg.todo_status) ? (
+                <p
+                  className={`inline-flex w-fit items-center gap-1 rounded px-1.5 py-0.5 ${
+                    archived ? 'bg-gray-400 text-white' : 'bg-red-600 text-white'
+                  }`}
+                  style={{ fontSize: `${auxSize}px` }}
+                >
+                  <BellRing className="w-3 h-3 flex-shrink-0" />
+                  提醒：{msg.due_at.slice(0, 16)}
+                </p>
+              ) : (
+                <p
+                  className={`flex items-center gap-1 ${archived ? 'text-gray-400 dark:text-gray-500' : 'text-amber-600'}`}
+                  style={{ fontSize: `${auxSize}px` }}
+                >
+                  <BellRing className="w-3 h-3 flex-shrink-0" />
+                  提醒：{msg.due_at.slice(0, 16)}
+                </p>
+              ))}
+            {msg.todo_note && (
+              <p
+                className={archived ? 'text-gray-400 dark:text-gray-500' : 'text-amber-600'}
+                style={{ fontSize: `${auxSize}px` }}
+              >
+                待办备注：{msg.todo_note}
+              </p>
+            )}
+            {msg.note && (
+              <p
+                className={archived ? 'text-gray-400 dark:text-gray-500' : 'text-blue-500'}
+                style={{ fontSize: `${auxSize}px` }}
+              >
+                公共备注：{msg.note}
+              </p>
+            )}
+            {msg.my_note && (
+              <p
+                className={archived ? 'text-gray-400 dark:text-gray-500' : 'text-gray-500 dark:text-gray-400'}
+                style={{ fontSize: `${auxSize}px` }}
+              >
+                我的备注：{msg.my_note}
+              </p>
+            )}
+
+            {/* 行 C：次要信息（日期 · 群名 · 昵称 · 归档图标），统一灰色 */}
+            <div className="flex items-center gap-1.5 text-gray-400" style={{ fontSize: `${auxSize}px` }}>
+              <span className="flex-shrink-0" title={`消息日期：${msg.created_at.slice(0, 10)}`}>
+                {msg.created_at.slice(0, 10)}
+              </span>
+              <span className="truncate" title={`「${msg.group_name}」`}>
+                「{msg.group_name}」
+              </span>
+              <span className="truncate" title={`发送者：${msg.nickname}`}>
+                {msg.nickname}
+              </span>
+              {/* 已归档只显示 Archive 图标，不再重复文字 */}
+              {archived && <Archive className="w-3.5 h-3.5 flex-shrink-0" />}
+            </div>
+          </div>
         </div>
-        <p className="mb-0.5 font-medium" style={{ color: msg.color, fontSize: `${auxSize}px` }}>{msg.nickname}</p>
-        <p
-          className={`break-words ${selectable ? '' : 'line-clamp-2'} ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}
-          style={{ fontSize: `${contentSize}px` }}
-        >
-          {msgText(msg)}
-        </p>
-        {msg.due_at && (
-          isOverdueTodo(msg.due_at, msg.todo_status) ? (
-            /* 逾期未完成：红底白字徽章，醒目 */
-            <p
-              className="mt-1 inline-flex w-fit items-center gap-1 rounded bg-red-600 px-1.5 py-0.5 text-white"
-              style={{ fontSize: `${auxSize}px` }}
-            >
-              <BellRing className="w-3 h-3 flex-shrink-0" />
-              提醒：{msg.due_at.slice(0, 16)}
-            </p>
-          ) : (
-            <p className="text-amber-600 mt-1 flex items-center gap-1" style={{ fontSize: `${auxSize}px` }}>
-              <BellRing className="w-3 h-3 flex-shrink-0" />
-              提醒：{msg.due_at.slice(0, 16)}
-            </p>
-          )
-        )}
-        {msg.todo_note && <p className="text-amber-500 mt-1" style={{ fontSize: `${auxSize}px` }}>待办备注：{msg.todo_note}</p>}
-        {msg.note && <p className="text-blue-500 mt-1" style={{ fontSize: `${auxSize}px` }}>公共备注：{msg.note}</p>}
-        {msg.my_note && <p className="text-gray-500 dark:text-gray-400 mt-1" style={{ fontSize: `${auxSize}px` }}>我的备注：{msg.my_note}</p>}
       </div>
     </div>
   );
