@@ -257,7 +257,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
         <div className="flex-1 min-w-0">
           <p
             className={`break-words line-clamp-2 ${
-              st === 'done' ? 'line-through text-gray-400' : isDarkMode ? 'text-gray-100' : 'text-gray-700'
+              isDarkMode ? 'text-gray-100' : 'text-gray-700'
             }`}
             style={{ fontSize: `${contentSize}px` }}
           >
@@ -364,11 +364,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
                   <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dueDotCls(m)}`} />
                   <span
                     className={`truncate ${
-                      dueStateOf(m) === 'done'
-                        ? 'line-through text-gray-400'
-                        : isDarkMode
-                          ? 'text-gray-300'
-                          : 'text-gray-600'
+                      isDarkMode ? 'text-gray-300' : 'text-gray-600'
                     }`}
                     style={{ fontSize: '12px' }}
                   >
