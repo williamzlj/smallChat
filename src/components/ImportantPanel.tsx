@@ -25,9 +25,16 @@ const colorLabel: Record<Tab, string> = { red: '红色', orange: '橘色', yello
 const colorDot: Record<Tab, string> = { red: 'bg-red-500', orange: 'bg-orange-400', yellow: 'bg-yellow-400', green: 'bg-green-500', blue: 'bg-blue-500', purple: 'bg-purple-500', gray: 'bg-gray-500' };
 const colorActive: Record<Tab, string> = { red: 'bg-red-500', orange: 'bg-orange-400', yellow: 'bg-yellow-500', green: 'bg-green-500', blue: 'bg-blue-500', purple: 'bg-purple-500', gray: 'bg-gray-500' };
 
+// 本地记住上次查看的颜色分类（仅存浏览器，不上传服务器）
+const IMPORTANT_TAB_KEY = 'smallchat-important-tab';
+const isColorTab = (v: string | null): v is Tab => v !== null && v in colorMap;
+
 // 跨群重要消息面板：红 / 橘 / 黄 / 绿 / 蓝 / 紫 / 灰，支持右键改色、归档、多选合并复制、查看按钮
 export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sidebarOpen, roleOf, onDelegate }: Props) => {
-  const [tab, setTab] = useState<Tab>('red');
+  const [tab, setTab] = useState<Tab>(() => {
+    const v = localStorage.getItem(IMPORTANT_TAB_KEY);
+    return isColorTab(v) ? v : 'red';
+  });
   const [showArchived, setShowArchived] = useState(false);
   const [messages, setMessages] = useState<CrossGroupMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +59,11 @@ export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, 
   useEffect(() => {
     void load();
   }, []);
+
+  // 记住上次选择的颜色分类
+  useEffect(() => {
+    localStorage.setItem(IMPORTANT_TAB_KEY, tab);
+  }, [tab]);
 
   const handleAction = async (action: PanelAction, msg: CrossGroupMessage, batchIds?: number[]) => {
     const ids = batchIds && batchIds.length > 0 ? batchIds : [msg.id];

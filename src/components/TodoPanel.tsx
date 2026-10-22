@@ -30,11 +30,23 @@ const todayStr = fmtDate(new Date());
 const WEEKDAY = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const weekdayOf = (date: string) => WEEKDAY[new Date(`${date}T00:00:00`).getDay()];
 
+// 本地记住上次浏览的待办视图（仅存浏览器，不上传服务器）
+const TODO_VIEW_KEY = 'smallchat-todo-view';
+const TODO_LIST_TAB_KEY = 'smallchat-todo-list-tab';
+const TODO_CAL_MODE_KEY = 'smallchat-todo-cal-mode';
+const isTodoTab = (v: string | null): v is Tab =>
+  v === 'pending' || v === 'done' || v === 'dueFuture' || v === 'duePast' || v === 'calendar';
+
 // 跨群待办面板：未完成 / 已完成，支持归档过滤、右键操作、多选合并复制
 export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggleSidebar, sidebarOpen, roleOf, onDelegate }: Props) => {
-  const [tab, setTab] = useState<Tab>('pending');
+  const [tab, setTab] = useState<Tab>(() => {
+    const v = localStorage.getItem(TODO_VIEW_KEY);
+    return isTodoTab(v) ? v : 'pending';
+  });
   // 进入月历前的列表 tab，返回时恢复
-  const [prevListTab, setPrevListTab] = useState<Tab>('pending');
+  const [prevListTab, setPrevListTab] = useState<Tab>(() =>
+    localStorage.getItem(TODO_LIST_TAB_KEY) === 'done' ? 'done' : 'pending',
+  );
   const [showArchived, setShowArchived] = useState(false);
   // 是否显示两个月后的远期提醒（默认关闭，避免每年检查这种远期事项淹没列表）
   const [showFarDue, setShowFarDue] = useState(false);
@@ -58,7 +70,9 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
   // 月历视图：月份、选中日期、列表/月历切换、窄屏判定（手机只显示圆点）
   const [calMonth, setCalMonth] = useState(todayStr.slice(0, 7));
   const [calDate, setCalDate] = useState(todayStr);
-  const [calMode, setCalMode] = useState<'month' | 'list'>('month');
+  const [calMode, setCalMode] = useState<'month' | 'list'>(() =>
+    localStorage.getItem(TODO_CAL_MODE_KEY) === 'list' ? 'list' : 'month',
+  );
   // 列表模式中已折叠的月份（YYYY-MM）
   const [collapsedMonths, setCollapsedMonths] = useState<Set<string>>(new Set());
   const toggleMonth = (month: string) =>
@@ -85,6 +99,17 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
   useEffect(() => {
     void load();
   }, []);
+
+  // 记住上次选择的视图与分类标签
+  useEffect(() => {
+    localStorage.setItem(TODO_VIEW_KEY, tab);
+  }, [tab]);
+  useEffect(() => {
+    localStorage.setItem(TODO_LIST_TAB_KEY, prevListTab);
+  }, [prevListTab]);
+  useEffect(() => {
+    localStorage.setItem(TODO_CAL_MODE_KEY, calMode);
+  }, [calMode]);
 
   // 窄屏（手机）不显示提醒文字，只显示颜色圆点
   useEffect(() => {
