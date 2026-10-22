@@ -261,21 +261,22 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
     if (isOverdueTodo(m.due_at, m.todo_status)) return 'overdue';
     return (m.due_at ?? '').slice(0, 10) === todayStr ? 'today' : 'upcoming';
   };
-  // 圆点规则：实心=未完成、空心=已完成；绿=未到期、红=已到期、灰=已归档
+  // 圆点规则：红=已到期、蓝=未到期（含今天）、绿=已完成、灰实心=已归档且已完成、灰空心=已归档未完成
   const dueDotCls = (m: CrossGroupMessage) => {
     const st = dueStateOf(m);
     const archived = m.todo_archived === 1;
     const done = st === 'done';
     if (archived) {
       return done
-        ? 'border border-gray-400 dark:border-gray-500 bg-transparent'
-        : isDarkMode
+        ? isDarkMode
           ? 'bg-gray-500'
-          : 'bg-gray-400';
+          : 'bg-gray-400'
+        : 'border border-gray-400 dark:border-gray-500 bg-transparent';
     }
-    if (done) return 'border border-green-500 bg-transparent';
+    if (done) return 'bg-green-500';
     if (st === 'overdue') return 'bg-red-500';
-    return 'bg-green-500'; // 未到期（含今天和未来）
+    // 未到期（含今天）：蓝色，与红色已到期明显区分
+    return 'bg-blue-500';
   };
 
   const shiftCalMonth = (delta: number) => {
@@ -311,7 +312,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
         ? 'text-gray-100'
         : 'text-gray-700';
     const noteCls = archived ? 'text-gray-400 dark:text-gray-500' : '';
-    // 状态圆点（与月历格子同规则：实心=未完成、空心=已完成；绿=未到期、红=已到期、灰=已归档）
+    // 状态圆点（与月历格子同规则：红=已到期、蓝=未到期、绿=已完成、灰=已归档）
     const dotCls = dueDotCls(m);
     // 折叠模式下，该条是否被单独展开
     const isExpanded = !compact || expandedIds.has(m.id);
@@ -606,20 +607,20 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
             </div>
             <div className="flex items-center gap-3 flex-wrap mt-2 text-sm text-gray-400">
               <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                未到期
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                已完成
+              </span>
+              <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                 已到期
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                未到期
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full border border-green-500" />
-                已完成
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
-                已归档
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-400 dark:bg-gray-500" />
+                已归档已完成
               </span>
             </div>
             <div className={`mt-3 rounded-xl p-3 ${isDarkMode ? 'bg-gray-700/60' : 'bg-white'}`}>
