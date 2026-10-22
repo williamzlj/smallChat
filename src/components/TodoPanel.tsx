@@ -6,10 +6,12 @@ import { usePanelMenu, PanelItem, msgLine, msgText, PanelAction, isOverdueTodo }
 import { DueEditor } from './DueEditor';
 import { ContextModal } from './ContextModal';
 import { TodoNoteModal } from './TodoNoteModal';
+import { NoteModal } from './NoteModal';
 
 interface Props {
   isDarkMode: boolean;
   fontSize: number;
+  currentUserId: number; // 当前用户 id（判定公共备注是否可编辑）
   onJump: (groupId: number, messageId: number) => void;
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
@@ -29,7 +31,7 @@ const WEEKDAY = ['周日', '周一', '周二', '周三', '周四', '周五', '�
 const weekdayOf = (date: string) => WEEKDAY[new Date(`${date}T00:00:00`).getDay()];
 
 // 跨群待办面板：未完成 / 已完成，支持归档过滤、右键操作、多选合并复制
-export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sidebarOpen, roleOf, onDelegate }: Props) => {
+export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggleSidebar, sidebarOpen, roleOf, onDelegate }: Props) => {
   const [tab, setTab] = useState<Tab>('pending');
   // 进入月历前的列表 tab，返回时恢复
   const [prevListTab, setPrevListTab] = useState<Tab>('pending');
@@ -49,12 +51,23 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
   const [dueEdit, setDueEdit] = useState<CrossGroupMessage | null>(null);
   // 待办备注编辑（右键「添加/修改待办备注」打开，TodoNoteModal 含快速时长文本）
   const [noteEdit, setNoteEdit] = useState<CrossGroupMessage | null>(null);
+  // 消息备注编辑（右键「添加/修改消息备注」打开，公共备注 + 我的备注）
+  const [msgNoteEdit, setMsgNoteEdit] = useState<CrossGroupMessage | null>(null);
   // 上下文弹窗
   const [contextMsg, setContextMsg] = useState<CrossGroupMessage | null>(null);
   // 月历视图：月份、选中日期、列表/月历切换、窄屏判定（手机只显示圆点）
   const [calMonth, setCalMonth] = useState(todayStr.slice(0, 7));
   const [calDate, setCalDate] = useState(todayStr);
   const [calMode, setCalMode] = useState<'month' | 'list'>('month');
+  // 列表模式中已折叠的月份（YYYY-MM）
+  const [collapsedMonths, setCollapsedMonths] = useState<Set<string>>(new Set());
+  const toggleMonth = (month: string) =>
+    setCollapsedMonths((prev) => {
+      const next = new Set(prev);
+      if (next.has(month)) next.delete(month);
+      else next.add(month);
+      return next;
+    });
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 639px)').matches);
 
   const load = async () => {
@@ -103,6 +116,9 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
       } else if (action.type === 'todoNote') {
         setNoteEdit(msg);
         return;
+      } else if (action.type === 'messageNote') {
+        setMsgNoteEdit(msg);
+        return;
       } else if (action.type === 'copy') {
         const list = batchIds && batchIds.length > 0
           ? messages.filter((m) => batchIds.includes(m.id))
@@ -134,6 +150,22 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
       setNoteEdit(null);
       setExportMsg('备注已保存');
       setTimeout(() => setExportMsg(''), 1500);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '操作失败');
+    }
+  };
+
+  // 保存消息备注：公共备注（作者/管理员）与我的备注（所有人）分两次提交
+  const saveMsgNote = async (note: string, scope: 'private' | 'public') => {
+    const msg = msgNoteEdit;
+    if (!msg) return;
+    try {
+      await api.messagesSetNote(msg.id, note, scope);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id ? { ...m, ...(scope === 'public' ? { note } : { my_note: note }) } : m,
+        ),
+      );
     } catch (e) {
       alert(e instanceof Error ? e.message : '操作失败');
     }
@@ -208,6 +240,21 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
       ([date, list]) =>
         [date, [...list].sort((a, b) => (a.due_at ?? '').localeCompare(b.due_at ?? ''))] as [string, CrossGroupMessage[]],
     );
+  // 提醒总览：全部条数与已到期（未完成且已过提醒时间）条数
+  const overdueCount = reminderMsgs.filter((m) => isOverdueTodo(m.due_at, m.todo_status)).length;
+  // 列表视图再按月归组（月标题 → 该月的日期分组），月份倒序
+  const monthGroups = Array.from(dayMap.keys())
+    .map((date) => date.slice(0, 7))
+    .filter((month, i, arr) => arr.indexOf(month) === i)
+    .sort((a, b) => b.localeCompare(a))
+    .map((month) => ({
+      month,
+      count: reminderMsgs.filter((m) => (m.due_at as string).startsWith(month)).length,
+      overdue: reminderMsgs.filter(
+        (m) => (m.due_at as string).startsWith(month) && isOverdueTodo(m.due_at, m.todo_status),
+      ).length,
+      dates: dateGroups.filter(([date]) => date.startsWith(month)),
+    }));
 
   const dueStateOf = (m: CrossGroupMessage): 'done' | 'overdue' | 'today' | 'upcoming' => {
     if (m.todo_status === 2) return 'done';
@@ -358,7 +405,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
     const selectedItems = [...(dayMap.get(calDate) ?? [])].sort((a, b) =>
       (a.due_at ?? '').localeCompare(b.due_at ?? ''),
     );
-    const navBtn = `p-1 rounded-lg ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`;
+    const navBtn = `px-0.5 py-1 rounded-lg ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`;
     const segBtn = (active: boolean) =>
       `px-2.5 py-1 text-sm rounded-md transition-colors ${
         active
@@ -440,12 +487,27 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
       <div>
         <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
-            <span className={`text-base font-medium ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-              {cy}年{cm}月
-            </span>
-            <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-              {monthItems.length} 条提醒
-            </span>
+            {calMode === 'list' ? (
+              <>
+                {/* 列表模式显示总体统计（各月份的分组统计仍在月标题上） */}
+                <span className={`text-base ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  共 {reminderMsgs.length} 条提醒
+                </span>
+                <span className={`text-base ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  已到期 {overdueCount} 条
+                </span>
+              </>
+            ) : (
+              <>
+                {/* 月历模式显示当前月份 */}
+                <span className={`text-base font-medium ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                  {cy}年{cm}月
+                </span>
+                <span className={`text-base ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {monthItems.length} 条提醒
+                </span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             {calMode === 'month' && (
@@ -481,27 +543,53 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
         </div>
 
         {calMode === 'list' ? (
-          dateGroups.length === 0 ? (
+          monthGroups.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-gray-400">
               <Inbox className="w-12 h-12 mb-2" />
               <p className="text-sm">没有设置提醒的事项</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {dateGroups.map(([date, list]) => (
-                <div key={date}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-sm font-bold ${isDarkMode ? 'text-gray-100' : 'text-gray-800'}`}>
-                      {date} {weekdayOf(date)}
-                    </span>
-                    {date === todayStr && (
-                      <span className="px-1.5 py-0.5 rounded text-xs bg-green-500 text-white">今天</span>
+            <div className="space-y-4">
+              {monthGroups.map(({ month, count, overdue, dates }) => {
+                const collapsed = collapsedMonths.has(month);
+                return (
+                  <div key={month}>
+                    {/* 月份标题：左侧缩进与按天汇总错开；右侧按钮可折叠该月 */}
+                    <div className={`flex items-center gap-2 mb-1.5 pb-1 pl-5 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                      <span className={`text-base font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                        {month.slice(0, 4)}年{Number(month.slice(5, 7))}月
+                      </span>
+                      <span className="text-sm text-gray-400">{count} 条提醒</span>
+                      {overdue > 0 && <span className="text-sm text-gray-400">已到期 {overdue} 条</span>}
+                      <button
+                        onClick={() => toggleMonth(month)}
+                        className={`ml-auto p-1 rounded-lg ${isDarkMode ? 'text-gray-400 hover:bg-gray-700 hover:text-gray-200' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'}`}
+                        title={collapsed ? '展开该月' : '折叠该月'}
+                      >
+                        {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                      </button>
+                    </div>
+                    {!collapsed && (
+                      <div className="space-y-3">
+                        {dates.map(([date, list]) => (
+                          <div key={date}>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-sm font-bold ${isDarkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                                {date} {weekdayOf(date)}
+                              </span>
+                              {date === todayStr && (
+                                <span className="px-1.5 py-0.5 rounded text-xs bg-green-500 text-white">今天</span>
+                              )}
+                              <span className="text-sm text-gray-400">{list.length} 条提醒</span>
+                            </div>
+                            <div className="space-y-1.5">{list.map((m) => reminderRow(m, calCompact))}</div>
+                          </div>
+                        ))}
+                      </div>
                     )}
-                    <span className="text-sm text-gray-400">{list.length} 条提醒</span>
                   </div>
-                  <div className="space-y-1.5">{list.map((m) => reminderRow(m, calCompact))}</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )
         ) : (
@@ -523,15 +611,15 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                今天
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
                 未到期
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full border border-green-500" />
                 已完成
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                已归档
               </span>
             </div>
             <div className={`mt-3 rounded-xl p-3 ${isDarkMode ? 'bg-gray-700/60' : 'bg-white'}`}>
@@ -624,11 +712,8 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
           >
             {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-          <h2 className={`text-base font-semibold ml-2 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-            {tab === 'calendar' ? '提醒月历' : '全部待办'}
-          </h2>
-          {/* 列表 / 月历 视图切换滑块 */}
-          <div className={`ml-3 flex items-center rounded-lg p-0.5 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+          {/* 视图切换滑块：列表=全部待办，月历=提醒月历（标题已并入滑块，避免与下方滑块重名） */}
+          <div className={`ml-2 flex items-center rounded-lg p-0.5 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
             <button
               onClick={() => {
                 if (tab === 'calendar') setTab(prevListTab);
@@ -643,7 +728,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
                     : 'text-gray-500'
               }`}
             >
-              列表
+              全部待办
             </button>
             <button
               onClick={() => {
@@ -662,7 +747,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
                     : 'text-gray-500'
               }`}
             >
-              月历
+              提醒月历
             </button>
           </div>
         </div>
@@ -851,6 +936,17 @@ export const TodoPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sideb
           initialNote={noteEdit.todo_note ?? ''}
           onSave={saveTodoNote}
           onClose={() => setNoteEdit(null)}
+        />
+      )}
+      {/* 消息备注编辑弹窗：公共备注（作者/管理员可写）+ 我的备注 */}
+      {msgNoteEdit && (
+        <NoteModal
+          isDarkMode={isDarkMode}
+          canPublic={msgNoteEdit.is_dm === 1 || msgNoteEdit.user_id === currentUserId || canManageOf(msgNoteEdit)}
+          publicNote={msgNoteEdit.note ?? ''}
+          privateNote={msgNoteEdit.my_note ?? ''}
+          onSave={saveMsgNote}
+          onClose={() => setMsgNoteEdit(null)}
         />
       )}
       {dueEdit && (

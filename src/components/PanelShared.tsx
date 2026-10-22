@@ -35,6 +35,7 @@ export type PanelAction =
   | { type: 'normal' } // 转普通消息
   | { type: 'setDue' } // 设置/清除到点提醒
   | { type: 'todoNote' } // 添加/修改待办备注（仅待办模式）
+  | { type: 'messageNote' } // 添加/修改消息备注（公共/私有，仅待办模式）
   | { type: 'color'; color: number } // 0=取消 1红 2橘 3蓝 4灰
   | { type: 'copy' } // 复制（带时间）
   | { type: 'selectText' } // 开启文本选择模式
@@ -187,6 +188,11 @@ export const usePanelMenu = ({ isDarkMode, mode, onAction, canManageOf, selectMo
                 { type: 'todoNote' },
                 false,
                 !manage,
+              )}
+              {!isBatch && item(
+                <StickyNote className="w-4 h-4 text-blue-500" />,
+                menu.msg.note || menu.msg.my_note ? '修改消息备注' : '添加消息备注',
+                { type: 'messageNote' },
               )}
               {menu.msg.todo_archived === 1
                 ? item(<ArchiveRestore className="w-4 h-4 text-blue-500" />, `恢复为活跃${isBatch ? `（${selectedIds.size} 条）` : ''}`, { type: 'archived', archived: 0 }, false, !manage)

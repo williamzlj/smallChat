@@ -116,9 +116,17 @@ export const Sidebar = ({
             const active = g.id === currentGroupId;
             const dmPeer = g.is_dm === 1 ? g.dm_peer : null;
             return (
-              <button
+              <div
                 key={g.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectGroup(g.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectGroup(g.id);
+                  }
+                }}
                 className={`group w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl mb-1 text-left transition-colors ${
                   active
                     ? isDarkMode
@@ -199,7 +207,7 @@ export const Sidebar = ({
                     </button>
                   );
                 })()}
-              </button>
+              </div>
             );
           })
         )}
