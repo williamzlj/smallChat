@@ -11,6 +11,8 @@ interface Props {
   onJump: (groupId: number, messageId: number) => void;
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
+  // 面板当前是否激活可见（用于切入时静默刷新）
+  active: boolean;
   // 群 id → 本人在该群的角色（用于条目操作权限判定）
   roleOf: (groupId: number) => GroupRole | undefined;
   // 委托：切到该群会话并预填委托文案（summary=消息内容摘要）
@@ -30,7 +32,7 @@ const IMPORTANT_TAB_KEY = 'smallchat-important-tab';
 const isColorTab = (v: string | null): v is Tab => v !== null && v in colorMap;
 
 // 跨群重要消息面板：红 / 橘 / 黄 / 绿 / 蓝 / 紫 / 灰，支持右键改色、归档、多选合并复制、查看按钮
-export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sidebarOpen, roleOf, onDelegate }: Props) => {
+export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sidebarOpen, active, roleOf, onDelegate }: Props) => {
   const [tab, setTab] = useState<Tab>(() => {
     const v = localStorage.getItem(IMPORTANT_TAB_KEY);
     return isColorTab(v) ? v : 'red';
@@ -44,21 +46,28 @@ export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, 
   // 上下文弹窗
   const [contextMsg, setContextMsg] = useState<CrossGroupMessage | null>(null);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const { messages: list } = await api.messagesImportant();
       setMessages(list);
     } catch {
       // 忽略
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 切入面板时静默刷新：先显示旧数据（秒开无转圈），后台拉新数据无缝更新
+  useEffect(() => {
+    if (active) void load(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   // 记住上次选择的颜色分类
   useEffect(() => {

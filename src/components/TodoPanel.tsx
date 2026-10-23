@@ -15,6 +15,8 @@ interface Props {
   onJump: (groupId: number, messageId: number) => void;
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
+  // 面板当前是否激活可见（用于切入时静默刷新）
+  active: boolean;
   // 群 id → 本人在该群的角色（用于条目操作权限判定）
   roleOf: (groupId: number) => GroupRole | undefined;
   // 委托：切到该群会话并预填委托文案（summary=消息内容摘要）
@@ -38,7 +40,7 @@ const isTodoTab = (v: string | null): v is Tab =>
   v === 'pending' || v === 'done' || v === 'dueFuture' || v === 'duePast' || v === 'calendar';
 
 // 跨群待办面板：未完成 / 已完成，支持归档过滤、右键操作、多选合并复制
-export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggleSidebar, sidebarOpen, roleOf, onDelegate }: Props) => {
+export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggleSidebar, sidebarOpen, active, roleOf, onDelegate }: Props) => {
   const [tab, setTab] = useState<Tab>(() => {
     const v = localStorage.getItem(TODO_VIEW_KEY);
     return isTodoTab(v) ? v : 'pending';
@@ -84,21 +86,28 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
     });
   const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 639px)').matches);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const { messages: list } = await api.messagesTodos();
       setMessages(list);
     } catch {
       // 忽略
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 切入面板时静默刷新：先显示旧数据（秒开无转圈），后台拉新数据无缝更新
+  useEffect(() => {
+    if (active) void load(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   // 记住上次选择的视图与分类标签
   useEffect(() => {

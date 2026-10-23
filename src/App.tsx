@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Menu, X, Info, Hash, Search, ListTodo, Pin, MessageCircle, Flag, CheckCheck, Megaphone, ArrowLeft, Wallet, Banknote, ChevronDown, Check, ChevronsDown, History } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { AvatarCropModal } from './components/AvatarCropModal';
@@ -786,6 +786,7 @@ export default function App() {
             onJump={handlePanelJump}
             onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
             sidebarOpen={sidebarVisible}
+            active={view === 'todos'}
             roleOf={roleOf}
             onDelegate={(gid, summary, kind) => void handleDelegate(gid, summary, kind)}
           />
@@ -797,6 +798,7 @@ export default function App() {
             onJump={handlePanelJump}
             onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
             sidebarOpen={sidebarVisible}
+            active={view === 'important'}
             roleOf={roleOf}
             onDelegate={(gid, summary, kind) => void handleDelegate(gid, summary, kind)}
           />

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../api/client';
 import { ChatMessage, User } from '../api/types';
 import { POLL_INTERVAL, INITIAL_MSG_LIMIT, HISTORY_LIMIT } from '../config';
+import { readMsgCache, writeMsgCache } from '../api/msgCache';
 
 export interface SendTextOpts {
   replyTo?: ChatMessage | null; // 引用回复的目标消息
@@ -86,21 +87,41 @@ export const useChat = (
     }
 
     let cancelled = false;
-    setLoading(true);
-    setMessages([]);
+    let safetyTimer: ReturnType<typeof setTimeout> | null = null;
+
+    (async () => {
     setHasMore(false);
     setHighlightMsgId(null);
     maxIdRef.current = 0;
     minIdRef.current = 0;
 
+    // 定位模式（面板跳转）不读缓存，直接走网络定位
+    const isFocusMode = !!(focusMsgId && focusMsgId > 0);
+
+    // 秒开：先从本地缓存渲染上次的消息，后台再用服务器数据覆盖
+    let hadCache = false;
+    if (!isFocusMode) {
+      const cached = await readMsgCache(groupId);
+      if (!cancelled && groupIdRef.current === groupId && cached && cached.length > 0) {
+        hadCache = true;
+        setMessages(cached);
+        maxIdRef.current = cached[cached.length - 1].id;
+        minIdRef.current = cached[0].id;
+        // 缓存条数达到一页，说明可能还有更早历史
+        setHasMore(cached.length >= INITIAL_MSG_LIMIT);
+      }
+    }
+    // 有缓存时已能展示内容，无需 loading 转圈；无缓存才显示加载态
+    setLoading(!hadCache);
+    if (!hadCache) setMessages([]);
+
     // 安全超时：15 秒后强制结束加载态，避免网络异常时一直转圈
-    const safetyTimer = setTimeout(() => {
+    safetyTimer = setTimeout(() => {
       if (!cancelled) setLoading(false);
     }, 15000);
 
-    (async () => {
-      try {
-        if (focusMsgId && focusMsgId > 0) {
+    try {
+        if (isFocusMode) {
           // 定位模式：以目标消息为中心拉取一页
           const { messages: list, has_more_before } = await api.messagesAround(
             groupId,
@@ -132,21 +153,23 @@ export const useChat = (
           minIdRef.current = list[0].id;
           // 拉满一页说明可能还有更早的历史
           setHasMore(list.length >= INITIAL_MSG_LIMIT);
+          // 用服务器最新一页覆盖缓存（旧缓存里的更早历史会在 loadMore 时重新并入）
+          void writeMsgCache(groupId, list);
         } else {
           setHasMore(false);
         }
-      } catch (e) {
+    } catch (e) {
         console.warn('加载消息失败', e);
-      } finally {
-        clearTimeout(safetyTimer);
+    } finally {
+        if (safetyTimer) clearTimeout(safetyTimer);
         // 仅当当前群未变时才重置 loading，避免覆盖新群的加载态
         if (groupIdRef.current === groupId) setLoading(false);
-      }
+    }
     })();
 
     return () => {
       cancelled = true;
-      clearTimeout(safetyTimer);
+      if (safetyTimer) clearTimeout(safetyTimer);
     };
   }, [groupId, focusMsgId]);
 
@@ -203,6 +226,8 @@ export const useChat = (
             if (!m.clientTempId) map.set(m.id, m);
           });
           const merged = Array.from(map.values()).sort((a, b) => a.id - b.id);
+          // 把并入更早历史后的完整列表写回缓存（凑满 6 页，弱网可翻最近几天）
+          void writeMsgCache(groupId, merged);
           // 保留 temp 消息
           const temps = prev.filter((m) => m.clientTempId);
           return [...merged, ...temps];

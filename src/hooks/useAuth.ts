@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api, tokenStore, onUnauthorized } from '../api/client';
 import { User } from '../api/types';
 import { currentDeviceName } from '../config';
+import { clearMsgCache } from '../api/msgCache';
 
 export interface AuthResult {
   success: boolean;
@@ -91,6 +92,8 @@ export const useAuth = () => {
       // 即使接口失败也要清除本地状态
     }
     tokenStore.clear();
+    // 登出清空本地消息缓存，避免残留上一账号的聊天内容
+    void clearMsgCache();
     setUser(null);
   }, []);
 
