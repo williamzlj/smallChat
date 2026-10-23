@@ -146,6 +146,9 @@ export interface SearchResult {
   color: string;
   content: string;
   created_at: string;
+  // 备注命中时返回：命中的备注内容与来源标签（待办备注/公共备注/我的备注）
+  hit_note?: string;
+  hit_note_label?: string;
 }
 
 // 群成员已读状态

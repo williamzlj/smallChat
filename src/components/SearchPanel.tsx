@@ -285,6 +285,12 @@ export const SearchPanel = ({ currentGroupId, currentGroupName, groups, isDarkMo
                 <p className={`text-sm break-words line-clamp-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
                   <Highlight text={r.content} keyword={keyword} />
                 </p>
+                {r.hit_note && r.hit_note_label && (
+                  <p className={`text-sm break-words line-clamp-2 mt-0.5 ${isDarkMode ? 'text-amber-300' : 'text-amber-600'}`}>
+                    <span className="text-xs opacity-80">{r.hit_note_label}：</span>
+                    <Highlight text={r.hit_note} keyword={keyword} />
+                  </p>
+                )}
                 {scopeAll && (
                   <p className="text-xs text-gray-400 mt-0.5">
                     来自{r.is_dm === 1 ? '私聊' : '群聊'}「{r.group_name}」· 点击跳转
