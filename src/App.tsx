@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Menu, X, Info, Hash, Search, ListTodo, Pin, MessageCircle, Flag, CheckCheck, Megaphone, ArrowLeft, Wallet, Banknote, ChevronDown, Check, ChevronsDown, History } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { AvatarCropModal } from './components/AvatarCropModal';
@@ -359,6 +359,30 @@ export default function App() {
         <span>{label}</span>
       </span>
       {active && <Check className="w-4 h-4 text-green-500 flex-shrink-0" />}
+    </button>
+  );
+
+  // 桌面端（lg 及以上）头部常用功能图标按钮：直接展开，不收纳进下拉
+  const headerIconBtn = (
+    icon: React.ReactNode,
+    title: string,
+    active: boolean,
+    onClick: () => void,
+    activeColor = 'text-green-500',
+  ) => (
+    <button
+      onClick={onClick}
+      title={title}
+      className={`relative p-2 rounded-lg transition-colors ${
+        active
+          ? `${isDarkMode ? 'bg-gray-700' : 'bg-green-50'} ${activeColor}`
+          : isDarkMode
+            ? 'text-gray-400 hover:bg-gray-700'
+            : 'text-gray-500 hover:bg-gray-100'
+      }`}
+    >
+      {icon}
+      {active && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-amber-500" />}
     </button>
   );
 
@@ -853,8 +877,96 @@ export default function App() {
                 </div>
               </div>
               <div className="flex items-center flex-shrink-0">
-                {/* 顶部功能收纳为下拉菜单，保持头部清爽 */}
-                <div className="relative">
+                {/* 桌面端：常用功能直接展开为图标按钮，方便操作 */}
+                <div className="hidden lg:flex items-center gap-0.5 mr-1">
+                  {headerIconBtn(
+                    <ListTodo className="w-5 h-5" />,
+                    todoOnly ? '退出只看待办' : '只看待办',
+                    todoOnly,
+                    () => {
+                      setTodoOnly(!todoOnly);
+                      if (todoOnly) return;
+                      setImportantOnly(false);
+                      setLedgerOnly(false);
+                    },
+                    'text-amber-500',
+                  )}
+                  {todoOnly &&
+                    headerIconBtn(
+                      <CheckCheck className="w-5 h-5" />,
+                      showCompletedTodo ? '隐藏已完成待办' : '同时显示已完成待办',
+                      showCompletedTodo,
+                      () => setShowCompletedTodo(!showCompletedTodo),
+                      'text-green-500',
+                    )}
+                  {headerIconBtn(
+                    <Flag className="w-5 h-5" />,
+                    importantOnly ? '退出只看重要' : '只看重要消息',
+                    importantOnly,
+                    () => {
+                      setImportantOnly(!importantOnly);
+                      if (importantOnly) return;
+                      setTodoOnly(false);
+                      setLedgerOnly(false);
+                    },
+                    'text-red-500',
+                  )}
+                  {ledgerEnabled &&
+                    headerIconBtn(
+                      <Banknote className="w-5 h-5" />,
+                      ledgerOnly ? '退出只看财务' : '只看财务消息',
+                      ledgerOnly,
+                      () => {
+                        setLedgerOnly(!ledgerOnly);
+                        if (ledgerOnly) return;
+                        setTodoOnly(false);
+                        setImportantOnly(false);
+                      },
+                      'text-rose-500',
+                    )}
+                  <div className={`w-px h-5 mx-1 ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'}`} />
+                  {headerIconBtn(
+                    <ChevronsDown className="w-5 h-5" />,
+                    '跳到最新消息',
+                    false,
+                    () => setJumpRequest({ ts: null, nonce: Date.now() }),
+                    'text-green-500',
+                  )}
+                  {headerIconBtn(
+                    <History className="w-5 h-5" />,
+                    '回看3天前的消息',
+                    false,
+                    () => {
+                      const d = new Date();
+                      d.setDate(d.getDate() - 3);
+                      d.setHours(0, 0, 0, 0);
+                      setJumpRequest({ ts: d.getTime(), nonce: Date.now() });
+                    },
+                    'text-blue-500',
+                  )}
+                  {ledgerEnabled &&
+                    headerIconBtn(
+                      <Wallet className="w-5 h-5" />,
+                      '记账 / 开支汇总',
+                      false,
+                      () => setLedgerOpen(true),
+                      'text-rose-500',
+                    )}
+                  {headerIconBtn(
+                    <Search className="w-5 h-5" />,
+                    '搜索聊天记录',
+                    false,
+                    () => {
+                      setSearchMode('message');
+                      setSearchScopeAll(false);
+                      setSearchOpen(true);
+                    },
+                    'text-green-500',
+                  )}
+                </div>
+
+                {/* 移动端：收纳为下拉菜单 */}
+                <div className="relative lg:hidden">
                   <button
                     onClick={() => setHeaderMenu((v) => !v)}
                     className={`relative p-2 rounded-lg ${

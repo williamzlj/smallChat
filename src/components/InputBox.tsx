@@ -1,4 +1,4 @@
-import { useState, KeyboardEvent, useRef, useEffect } from 'react';
+import { useState, KeyboardEvent, useRef, useEffect, useLayoutEffect } from 'react';
 import { Send, Paperclip, Smile, Image as ImageIcon, X, Loader2, CornerUpLeft, AtSign, Archive, Plus, FileText, Crop } from 'lucide-react';
 import {
   IMAGE_MAX_WIDTH,
@@ -215,6 +215,13 @@ export const InputBox = ({
     onReEditDraftDone?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reEditDraft]);
+
+  // 聊天输入框字号：用 !important 内联优先级写上去，压过 index.css 里 iOS 的 16px 兜底规则，
+  // 否则在 iPhone 的 Chrome/Safari 下输入框会被锁死在 16px，不随消息字号缩放。
+  useLayoutEffect(() => {
+    const ta = textareaRef.current;
+    if (ta) ta.style.setProperty('font-size', `${fontSize}px`, 'important');
+  }, [fontSize]);
 
   const submitText = async () => {
     const content = input.trim();
@@ -616,7 +623,6 @@ export const InputBox = ({
               minHeight: `${MIN_HEIGHT}px`,
               maxHeight: `${MAX_LINES * LINE_HEIGHT}px`,
               lineHeight: `${LINE_HEIGHT}px`,
-              fontSize: `${fontSize}px`,
             }}
           />
         </div>
