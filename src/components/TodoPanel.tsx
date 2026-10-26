@@ -1,8 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Loader2, Inbox, Menu, X, Download, Copy, Archive, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  Loader2,
+  Inbox,
+  Menu,
+  X,
+  Download,
+  Copy,
+  Archive,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  MessagesSquare,
+  ExternalLink,
+} from 'lucide-react';
 import { api } from '../api/client';
 import { CrossGroupMessage, GroupRole } from '../api/types';
-import { usePanelMenu, PanelItem, msgLine, msgText, PanelAction, isOverdueTodo } from './PanelShared';
+import { usePanelMenu, PanelItem, msgLine, msgText, PanelAction, isOverdueTodo, todoDotCls } from './PanelShared';
 import { DueEditor } from './DueEditor';
 import { ContextModal } from './ContextModal';
 import { TodoNoteModal } from './TodoNoteModal';
@@ -54,6 +67,10 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
   const [showFarDue, setShowFarDue] = useState(false);
   // 月历折叠模式：只显示标题，隐藏备注/标签/群名
   const [calCompact, setCalCompact] = useState(false);
+  // 列表视图折叠模式：只显示标题，隐藏备注/提醒/次要信息
+  const [listCompact, setListCompact] = useState(false);
+  // 列表折叠模式下单独展开的消息 id
+  const [listExpandedIds, setListExpandedIds] = useState<Set<number>>(new Set());
   // 折叠模式下单独展开的消息 id
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [messages, setMessages] = useState<CrossGroupMessage[]>([]);
@@ -295,23 +312,9 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
     if (isOverdueTodo(m.due_at, m.todo_status)) return 'overdue';
     return (m.due_at ?? '').slice(0, 10) === todayStr ? 'today' : 'upcoming';
   };
-  // 圆点规则：红=已到期、蓝=未到期（含今天）、绿=已完成、灰实心=已归档且已完成、灰空心=已归档未完成
-  const dueDotCls = (m: CrossGroupMessage) => {
-    const st = dueStateOf(m);
-    const archived = m.todo_archived === 1;
-    const done = st === 'done';
-    if (archived) {
-      return done
-        ? isDarkMode
-          ? 'bg-gray-500'
-          : 'bg-gray-400'
-        : 'border border-gray-400 dark:border-gray-500 bg-transparent';
-    }
-    if (done) return 'bg-green-500';
-    if (st === 'overdue') return 'bg-red-500';
-    // 未到期（含今天）：蓝色，与红色已到期明显区分
-    return 'bg-blue-500';
-  };
+  // 圆点规则与列表视图共用（PanelShared.todoDotCls）：
+  // 蓝=未到期、红=已到期、绿=已完成、灰实心=已归档已完成、灰空心=已归档未完成
+  const dueDotCls = (m: CrossGroupMessage) => todoDotCls(m, isDarkMode);
 
   const shiftCalMonth = (delta: number) => {
     const [y, m] = calMonth.split('-').map(Number);
@@ -319,6 +322,19 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
     const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     setCalMonth(next);
     setCalDate(next === todayStr.slice(0, 7) ? todayStr : `${next}-01`);
+  };
+
+  // 手机端长按 500ms 弹出同一套右键菜单（与「全部待办」一致；多选模式下禁用以避免误触）
+  const calPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startCalPress = (e: React.TouchEvent, m: CrossGroupMessage) => {
+    if (selectMode) return;
+    const t = e.touches[0];
+    const cx = t.clientX;
+    const cy = t.clientY;
+    calPressTimer.current = setTimeout(() => openMenu({ clientX: cx, clientY: cy }, m), 500);
+  };
+  const cancelCalPress = () => {
+    if (calPressTimer.current) clearTimeout(calPressTimer.current);
   };
 
   // 单条提醒（月历下方当日清单 / 列表视图共用）
@@ -362,10 +378,18 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
     return (
       <div
         key={m.id}
-        onClick={() => onJump(m.group_id, m.id)}
         onContextMenu={(e) => openMenu(e, m)}
-        className={`flex items-start gap-2 px-2.5 py-2 rounded-lg cursor-pointer ${
-          isDarkMode ? 'bg-gray-800 hover:bg-gray-700' : 'bg-white hover:bg-gray-50'
+        onTouchStart={(e) => startCalPress(e, m)}
+        onTouchEnd={cancelCalPress}
+        onTouchMove={cancelCalPress}
+        onTouchCancel={cancelCalPress}
+        onClick={() => selectMode && toggleSelect(m.id)}
+        className={`flex items-start gap-2 px-2.5 py-2 rounded-lg cursor-pointer select-none ${
+          selectMode && selected.has(m.id)
+            ? 'bg-green-100 dark:bg-green-900/30 ring-1 ring-green-400'
+            : isDarkMode
+              ? 'bg-gray-800 hover:bg-gray-700'
+              : 'bg-white hover:bg-gray-50'
         }`}
       >
         <span
@@ -415,17 +439,40 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
             </>
           )}
         </div>
-        {compact && (
+        {/* 右侧操作：查看上下文 / 在聊天中查看 / 折叠时单独展开 */}
+        <div className="flex items-center gap-0.5 flex-shrink-0">
           <button
-            onClick={toggleExpand}
-            className={`flex-shrink-0 p-1 rounded ${
-              isDarkMode ? 'text-gray-500 hover:bg-gray-700 hover:text-gray-300' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
-            }`}
-            title={isExpanded ? '收起' : '展开详情'}
+            onClick={(e) => {
+              e.stopPropagation();
+              setContextMsg(m);
+            }}
+            className={`p-1 rounded ${isDarkMode ? 'text-gray-500 hover:text-blue-400' : 'text-gray-400 hover:text-blue-600'}`}
+            title="查看该消息上下文（前后各5条）"
           >
-            <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+            <MessagesSquare className="w-4 h-4" />
           </button>
-        )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onJump(m.group_id, m.id);
+            }}
+            className={`p-1 rounded ${isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
+            title="在聊天中查看"
+          >
+            <ExternalLink className="w-4 h-4" />
+          </button>
+          {compact && (
+            <button
+              onClick={toggleExpand}
+              className={`p-1 rounded ${
+                isDarkMode ? 'text-gray-500 hover:bg-gray-700 hover:text-gray-300' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+              }`}
+              title={isExpanded ? '收起' : '展开详情'}
+            >
+              <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+            </button>
+          )}
+        </div>
       </div>
     );
   };
@@ -881,20 +928,18 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
         >
           {showFarDue ? '含远期提醒' : '查看远期提醒'}
         </button>
-        {/* 月历折叠模式：只显示标题，隐藏备注/标签/群名 */}
-        {tab === 'calendar' && (
-          <button
-            onClick={() => setCalCompact(!calCompact)}
-            className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-              calCompact
-                ? 'bg-indigo-500 text-white'
-                : isDarkMode ? 'bg-gray-700 text-gray-400' : 'bg-white text-gray-500'
-            }`}
-            title="折叠后每条提醒只显示时间和标题"
-          >
-            {calCompact ? '展开待办' : '折叠待办'}
-          </button>
-        )}
+        {/* 折叠模式：只显示标题，隐藏备注/标签/群名（列表与月历各自记忆状态） */}
+        <button
+          onClick={() => (tab === 'calendar' ? setCalCompact(!calCompact) : setListCompact(!listCompact))}
+          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+            (tab === 'calendar' ? calCompact : listCompact)
+              ? 'bg-indigo-500 text-white'
+              : isDarkMode ? 'bg-gray-700 text-gray-400' : 'bg-white text-gray-500'
+          }`}
+          title="折叠后每条只显示标题，右侧可单独展开"
+        >
+          {(tab === 'calendar' ? calCompact : listCompact) ? '展开待办' : '折叠待办'}
+        </button>
       </div>
 
       {selectMode && (
@@ -958,6 +1003,16 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
               onView={(msg) => onJump(msg.group_id, msg.id)}
               onViewContext={(msg) => setContextMsg(msg)}
               onContextMenu={openMenu}
+              compact={listCompact}
+              expanded={listExpandedIds.has(m.id)}
+              onToggleExpand={() =>
+                setListExpandedIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(m.id)) next.delete(m.id);
+                  else next.add(m.id);
+                  return next;
+                })
+              }
             />
           ))
         )}

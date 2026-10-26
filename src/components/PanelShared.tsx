@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import {
   Square, CheckSquare, Archive, ArchiveRestore, MessageSquare,
   Palette, Copy, ExternalLink, Loader2, TextSelect, BellRing, BellOff, MessagesSquare, StickyNote,
-  Circle, CheckCircle,
+  Circle, CheckCircle, ChevronDown,
 } from 'lucide-react';
 import { CrossGroupMessage } from '../api/types';
 
@@ -27,6 +27,21 @@ export const isOverdueTodo = (dueAt: string | null | undefined, todoStatus: numb
   const d = new Date();
   const nowStr = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:59`;
   return dueAt <= nowStr;
+};
+
+// 待办状态圆点（列表视图与提醒月历共用同一套规则）：
+// 蓝=未到期、红=已到期、绿=已完成、灰实心=已归档已完成、灰空心=已归档未完成、橘黄空心=未设置提醒
+export const todoDotCls = (m: CrossGroupMessage, isDarkMode: boolean): string => {
+  if (m.todo_archived === 1) {
+    return m.todo_status === 2
+      ? isDarkMode
+        ? 'bg-gray-500'
+        : 'bg-gray-400'
+      : 'border-2 border-gray-400 dark:border-gray-500 bg-transparent';
+  }
+  if (m.todo_status === 2) return 'bg-green-500';
+  if (!m.due_at) return 'border-2 border-amber-500 bg-transparent';
+  return isOverdueTodo(m.due_at, m.todo_status) ? 'bg-red-500' : 'bg-blue-500';
 };
 
 export type PanelAction =
@@ -267,6 +282,9 @@ interface PanelItemProps {
   onView: (msg: CrossGroupMessage) => void;
   onViewContext: (msg: CrossGroupMessage) => void;
   onContextMenu: (e: MenuTrigger, msg: CrossGroupMessage) => void;
+  compact?: boolean; // 折叠模式：只显示主行标题，隐藏备注/提醒/次要信息
+  expanded?: boolean; // 折叠模式下本条是否被单独展开
+  onToggleExpand?: () => void;
 }
 
 const COLOR_BORDER: Record<number, string> = {
@@ -295,13 +313,20 @@ export const PanelItem = ({
   onView,
   onViewContext,
   onContextMenu,
+  compact = false,
+  expanded = false,
+  onToggleExpand,
 }: PanelItemProps) => {
+  // 折叠模式下只有单独展开的条目才显示详情
+  const showDetail = !compact || expanded;
   // 当前模式下的归档状态：待办看 todo_archived，重要看 important_archived
   const archived = mode === 'todo' ? msg.todo_archived === 1 : msg.important_archived === 1;
   // 辅助文字统一字号：跟随设置缩放，最小 14px（与消息气泡规则一致）
   const auxSize = Math.max(fontSize - 6, 14);
   // 正文比辅助文字大两档：max(设置-4, 14)，面板是汇总查看，无需与气泡正文一样大
   const contentSize = Math.max(fontSize - 4, 14);
+  // 状态圆点直径：跟正文大小联动（与提醒月历的 0.75em 规则一致）
+  const dotPx = Math.round(contentSize * 0.75);
   const borderCls =
     mode === 'important' && msg.color_mark > 0
       ? `border-l-4 ${archived ? 'border-gray-400' : COLOR_BORDER[msg.color_mark] || ''}`
@@ -372,11 +397,13 @@ export const PanelItem = ({
           {/* gutter 列：勾选框(待办) / 彩色圆点(重要)。与右侧正文顶部同基准，mt 补偿文字 leading */}
           <div className="w-4 flex-shrink-0 mt-[3px]">
             {mode === 'todo' ? (
-              msg.todo_status === 1 ? (
-                <Square className={`w-4 h-4 ${archived ? 'text-gray-400' : 'text-amber-500'}`} />
-              ) : (
-                <CheckSquare className={`w-4 h-4 ${archived ? 'text-gray-400' : 'text-green-500'}`} />
-              )
+              // 待办：状态圆点（与提醒月历同款同规则）
+              <span className="w-4 h-4 flex items-center justify-center">
+                <span
+                  className={`inline-block rounded-full ${todoDotCls(msg, isDarkMode)}`}
+                  style={{ width: dotPx, height: dotPx }}
+                />
+              </span>
             ) : msg.color_mark > 0 ? (
               // 重要消息：彩色圆点用 SVG（纯色 + 白色描边），和 lucide 图标一样吃父级 mt，统一处理对齐
               <svg
@@ -468,10 +495,26 @@ export const PanelItem = ({
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                 </button>
+                {/* 折叠模式下单独展开/收起该条详情 */}
+                {compact && onToggleExpand && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleExpand();
+                    }}
+                    className={`p-1 rounded ${isDarkMode ? 'text-gray-500 hover:bg-gray-600 hover:text-gray-300' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
+                    title={expanded ? '收起' : '展开详情'}
+                  >
+                    <ChevronDown className={`w-4 h-4 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+                  </button>
+                )}
               </div>
             </div>
 
             {/* 行 B：备注类（提醒/待办备注/公共备注/我的备注），紧贴正文；已归档则灰化 */}
+            {/* 折叠模式下隐藏详情，点右侧箭头单独展开 */}
+            {showDetail && (
+              <>
             {msg.due_at &&
               (isOverdueTodo(msg.due_at, msg.todo_status) ? (
                 <p
@@ -531,6 +574,8 @@ export const PanelItem = ({
               {/* 已归档只显示 Archive 图标，不再重复文字 */}
               {archived && <Archive className="w-3.5 h-3.5 flex-shrink-0" />}
             </div>
+              </>
+            )}
           </div>
         </div>
       </div>
