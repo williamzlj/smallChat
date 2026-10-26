@@ -147,17 +147,23 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
 
   const handleAction = async (action: PanelAction, msg: CrossGroupMessage, batchIds?: number[]) => {
     const ids = batchIds && batchIds.length > 0 ? batchIds : [msg.id];
+    // 批量操作必须逐条串行提交：SQLite 并发写会互相抢写锁，并发请求（Promise.all）会随机返回 500「服务器错误」
+    const each = async (fn: (id: number) => Promise<unknown>) => {
+      for (const id of ids) {
+        await fn(id);
+      }
+    };
     try {
       if (action.type === 'todoStatus') {
-        await Promise.all(ids.map((id) => api.messagesSetTodo(id, action.status)));
+        await each((id) => api.messagesSetTodo(id, action.status));
         setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, todo_status: action.status } : m)));
         return;
       } else if (action.type === 'archived') {
-        await Promise.all(ids.map((id) => api.messagesSetArchived(id, action.archived)));
+        await each((id) => api.messagesSetArchived(id, action.archived));
         setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, todo_archived: action.archived } : m)));
         return;
       } else if (action.type === 'normal') {
-        await Promise.all(ids.map((id) => api.messagesSetTodo(id, 0)));
+        await each((id) => api.messagesSetTodo(id, 0));
         // 与后端一致：转普通消息时同时清掉到点提醒
         setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, todo_status: 0, due_at: null } : m)));
         return;

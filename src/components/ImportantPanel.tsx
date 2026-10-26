@@ -76,13 +76,19 @@ export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, 
 
   const handleAction = async (action: PanelAction, msg: CrossGroupMessage, batchIds?: number[]) => {
     const ids = batchIds && batchIds.length > 0 ? batchIds : [msg.id];
+    // 批量操作必须逐条串行提交：SQLite 并发写会互相抢写锁，并发请求（Promise.all）会随机返回 500「服务器错误」
+    const each = async (fn: (id: number) => Promise<unknown>) => {
+      for (const id of ids) {
+        await fn(id);
+      }
+    };
     try {
       if (action.type === 'color') {
-        await Promise.all(ids.map((id) => api.messagesSetColor(id, action.color)));
+        await each((id) => api.messagesSetColor(id, action.color));
         setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, color_mark: action.color } : m)));
         return;
       } else if (action.type === 'archived') {
-        await Promise.all(ids.map((id) => api.messagesSetArchived(id, action.archived, 'important')));
+        await each((id) => api.messagesSetArchived(id, action.archived, 'important'));
         setMessages((prev) => prev.map((m) => (ids.includes(m.id) ? { ...m, important_archived: action.archived } : m)));
         return;
       } else if (action.type === 'copy') {
