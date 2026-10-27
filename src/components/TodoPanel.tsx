@@ -389,7 +389,14 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
         onTouchEnd={cancelCalPress}
         onTouchMove={cancelCalPress}
         onTouchCancel={cancelCalPress}
-        onClick={() => selectMode && toggleSelect(m.id)}
+        onClick={(e) => {
+          if (selectMode) {
+            toggleSelect(m.id);
+            return;
+          }
+          // 折叠模式下点整条即展开/收起，方便临时查看被折叠的详情
+          if (compact) toggleExpand(e);
+        }}
         className={`flex items-start gap-2 px-2.5 py-2 rounded-lg cursor-pointer select-none ${
           selectMode && selected.has(m.id)
             ? 'bg-green-100 dark:bg-green-900/30 ring-1 ring-green-400'
@@ -417,8 +424,13 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
             </span>
             {msgText(m)}
           </p>
-          {isExpanded && (
-            <>
+          {/* 折叠模式下详情用高度 + 淡入动画展开/收起（0fr → 1fr），与列表视图/重要消息一致 */}
+          <div
+            className={`grid transition-all duration-300 ease-out ${
+              isExpanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+            }`}
+          >
+            <div className="overflow-hidden min-w-0">
               {m.todo_note && (
                 <p className={`mt-0.5 ${noteCls || 'text-amber-600 dark:text-amber-500'}`} style={{ fontSize: `${auxSize}px` }}>
                   待办备注：{m.todo_note}
@@ -442,8 +454,8 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
                 </span>
                 <span className="truncate">「{m.group_name}」</span>
               </p>
-            </>
-          )}
+            </div>
+          </div>
         </div>
         {/* 右侧操作：查看上下文 / 在聊天中查看 / 折叠时单独展开 */}
         <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -542,11 +554,23 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
           </span>
           {isMobile ? (
             items.length > 0 && (
-              <span className="flex flex-wrap items-center gap-0.5">
-                {items.slice(0, 4).map((m) => (
-                  <span key={m.id} className={`w-1.5 h-1.5 rounded-full ${dueDotCls(m)}`} />
-                ))}
-                {items.length > 4 && <span className="text-xs text-gray-400">+{items.length - 4}</span>}
+              // 手机端每格两行圆点：第一行 4 个，第二行再放 4 个；超过 8 个时第二行改成计数
+              <span className="flex flex-col items-start gap-0.5">
+                <span className="flex items-center gap-0.5">
+                  {items.slice(0, 4).map((m) => (
+                    <span key={m.id} className={`w-1.5 h-1.5 rounded-full ${dueDotCls(m)}`} />
+                  ))}
+                </span>
+                {items.length > 4 &&
+                  (items.length > 8 ? (
+                    <span className="text-xs text-gray-400 leading-none">+{items.length - 4}</span>
+                  ) : (
+                    <span className="flex items-center gap-0.5">
+                      {items.slice(4, 8).map((m) => (
+                        <span key={m.id} className={`w-1.5 h-1.5 rounded-full ${dueDotCls(m)}`} />
+                      ))}
+                    </span>
+                  ))}
               </span>
             )
           ) : (
@@ -794,7 +818,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
         <div className="flex items-center min-w-0">
           <button
             onClick={onToggleSidebar}
-            className={`p-1.5 rounded-lg lg:hidden flex-shrink-0 ${
+            className={`p-1.5 rounded-lg md:hidden flex-shrink-0 ${
               isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'
             }`}
           >

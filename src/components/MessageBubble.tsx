@@ -539,10 +539,11 @@ export const MessageBubble = ({
                 )}
 
                 {/* 记账徽章：支出/退款/收入/收入调减（退款与收入调减带「退」「减」标记，表示抵减而非新增） */}
+                {/* 字号封顶 18px + 按词组换行：大字号下也不会把「支出」压成竖排 */}
                 {money && (
                   <div
-                    className={`flex items-center gap-1.5 w-fit min-w-0 max-w-full rounded-md px-2 py-0.5 font-medium ${money.cls}`}
-                    style={{ fontSize: `${auxSize}px` }}
+                    className={`flex flex-wrap items-center gap-x-1.5 gap-y-0.5 w-fit min-w-0 max-w-full rounded-md px-2 py-0.5 font-medium ${money.cls}`}
+                    style={{ fontSize: `${Math.min(auxSize, 18)}px` }}
                     title={
                       money.label === '退款'
                         ? '退款：抵减本月支出（不计入收入）'
@@ -551,16 +552,18 @@ export const MessageBubble = ({
                           : `本月${money.label}`
                     }
                   >
-                    <Wallet className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>{money.label}</span>
-                    {money.marker && (
-                      <span className={`rounded px-1 text-white ${money.markerCls}`}>{money.marker}</span>
-                    )}
-                    <span>{money.text}</span>
-                    {message.amount_cat && <span className="opacity-80">· {message.amount_cat}</span>}
-                    {/* 记账日期 ≠ 消息发送日（补账场景）：同一行显示，图标 + 完整日期 */}
+                    <span className="flex items-center gap-1 whitespace-nowrap">
+                      <Wallet className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>{money.label}</span>
+                      {money.marker && (
+                        <span className={`rounded px-1 text-white ${money.markerCls}`}>{money.marker}</span>
+                      )}
+                      <span>{money.text}</span>
+                    </span>
+                    {message.amount_cat && <span className="min-w-0 max-w-full truncate opacity-80">· {message.amount_cat}</span>}
+                    {/* 记账日期 ≠ 消息发送日（补账场景）：作为独立词组，放不下时整块换到下一行 */}
                     {message.amount_date && message.amount_date !== message.created_at.slice(0, 10) && (
-                      <span className="flex items-center gap-1 opacity-80" title={`补账：记账日 ${message.amount_date}`}>
+                      <span className="flex items-center gap-1 whitespace-nowrap opacity-80" title={`补账：记账日 ${message.amount_date}`}>
                         <Calendar className="w-3.5 h-3.5 flex-shrink-0" />
                         <span>{message.amount_date}</span>
                       </span>

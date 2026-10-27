@@ -92,7 +92,7 @@ export const FriendDetail = ({
         )}
         <button
           onClick={onToggleSidebar}
-          className={`p-1.5 rounded-lg lg:hidden flex-shrink-0 ${
+          className={`p-1.5 rounded-lg md:hidden flex-shrink-0 ${
             isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'
           }`}
         >

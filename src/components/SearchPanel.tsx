@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { X, Search, Loader2, Users } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { X, Search, Loader2, Users, CornerUpRight } from 'lucide-react';
 import { api } from '../api/client';
 import { Group, SearchResult } from '../api/types';
 
@@ -8,8 +8,10 @@ interface Props {
   currentGroupName: string;
   groups: Group[]; // 群搜索模式的数据源（name/description/remark 已含在 groups.list 返回中）
   isDarkMode: boolean;
-  onJump: (groupId: number) => void;
+  onJump: (groupId: number, messageId?: number) => void;
   onClose: () => void;
+  // 面板是否展开：关掉只是隐藏（保留关键词与结果），再次打开可直接回看上次搜索
+  open: boolean;
   defaultScopeAll?: boolean;
   // 默认搜索模式：侧栏顶部搜索按钮进来默认「找群」，聊天头部搜索进来默认「搜消息」
   defaultMode?: 'group' | 'message';
@@ -17,6 +19,20 @@ interface Props {
 
 // 转义正则特殊字符
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// 搜索结果摘要：截取「关键词前后」的上下文片段，而不是永远从消息开头截
+// （长文本里关键词在后面时，开头截断会把关键词整个挡在可视区之外）
+const snippetOf = (text: string, keyword: string, lead = 12, span = 56) => {
+  const t = text ?? '';
+  const k = keyword.trim();
+  if (!t) return '';
+  const idx = k ? t.toLowerCase().indexOf(k.toLowerCase()) : -1;
+  // 没命中（例如命中来自备注）：退回开头一段
+  if (idx < 0) return t.length > span ? `${t.slice(0, span)}…` : t;
+  const start = Math.max(0, idx - lead);
+  const end = Math.min(t.length, start + span);
+  return `${start > 0 ? '…' : ''}${t.slice(start, end)}${end < t.length ? '…' : ''}`;
+};
 
 // 关键词高亮
 const Highlight = ({ text, keyword }: { text: string; keyword: string }) => {
@@ -39,7 +55,7 @@ const Highlight = ({ text, keyword }: { text: string; keyword: string }) => {
 };
 
 // 搜索面板（右侧抽屉）：「找群」按群名/群说明/群备注定位会话；「搜消息」为原聊天记录搜索
-export const SearchPanel = ({ currentGroupId, currentGroupName, groups, isDarkMode, onJump, onClose, defaultScopeAll = false, defaultMode = 'message' }: Props) => {
+export const SearchPanel = ({ currentGroupId, currentGroupName, groups, isDarkMode, onJump, onClose, open, defaultScopeAll = false, defaultMode = 'message' }: Props) => {
   const [mode, setMode] = useState<'group' | 'message'>(defaultMode);
   const [keyword, setKeyword] = useState('');
   const [scopeAll, setScopeAll] = useState(defaultScopeAll);
@@ -48,6 +64,13 @@ export const SearchPanel = ({ currentGroupId, currentGroupName, groups, isDarkMo
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // 面板常驻挂载（关闭只是隐藏，用来保留上次搜索），所以展开时手动聚焦输入框
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => inputRef.current?.focus(), 50);
+    return () => clearTimeout(t);
+  }, [open]);
 
   // 清空搜索框与结果，方便直接输入下一个关键词
   const clearKeyword = () => {
@@ -119,7 +142,7 @@ export const SearchPanel = ({ currentGroupId, currentGroupName, groups, isDarkMo
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+    <div className={open ? 'fixed inset-0 z-50 flex justify-end' : 'hidden'} onClick={onClose}>
       <div className="absolute inset-0 bg-black bg-opacity-40" />
       <div
         className={`relative w-full sm:w-96 h-full flex flex-col shadow-2xl ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}
@@ -153,7 +176,6 @@ export const SearchPanel = ({ currentGroupId, currentGroupName, groups, isDarkMo
                 }
               }}
               placeholder={mode === 'group' ? '输入群名 / 群说明 / 群备注' : '输入关键词，回车搜索'}
-              autoFocus
               className={`flex-1 bg-transparent outline-none text-sm ${isDarkMode ? 'text-white placeholder-gray-400' : 'text-gray-800'}`}
             />
             {loading && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
@@ -168,6 +190,21 @@ export const SearchPanel = ({ currentGroupId, currentGroupName, groups, isDarkMo
                 <X className="w-4 h-4" />
               </button>
             )}
+            {/* 显式搜索按钮：不用键盘回车也能触发（找群=进入第一个匹配，搜消息=执行搜索） */}
+            <button
+              onClick={() => {
+                if (mode === 'group') {
+                  if (matchedGroups.length > 0) jumpGroup(matchedGroups[0].id);
+                } else {
+                  void doSearch(0, false);
+                }
+              }}
+              disabled={!keyword.trim() || loading}
+              className="flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-medium bg-green-500 text-white hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={mode === 'group' ? '进入第一个匹配的会话' : '搜索消息'}
+            >
+              搜索
+            </button>
           </div>
           {/* 找群 / 搜消息 切换 */}
           <div className="flex items-center space-x-2 mt-2 px-1">
@@ -269,12 +306,9 @@ export const SearchPanel = ({ currentGroupId, currentGroupName, groups, isDarkMo
             <p className="text-sm text-gray-400 text-center py-10">没有找到相关消息</p>
           ) : (
             results.map((r) => (
-              <button
+              <div
                 key={r.id}
-                onClick={() => onJump(r.group_id)}
-                className={`w-full text-left px-3 py-2.5 rounded-xl mb-1 transition-colors ${
-                  isDarkMode ? 'hover:bg-gray-700/60' : 'hover:bg-gray-100'
-                }`}
+                className={`w-full px-3 py-2.5 rounded-xl mb-1 ${isDarkMode ? 'hover:bg-gray-700/40' : 'hover:bg-gray-50'}`}
               >
                 <p className="flex items-center justify-between mb-0.5 gap-2">
                   {/* 用户名与日期同字号（text-xs），统一灰色避免彩色干扰 */}
@@ -283,20 +317,30 @@ export const SearchPanel = ({ currentGroupId, currentGroupName, groups, isDarkMo
                   <span className="text-xs text-gray-400 flex-shrink-0">{r.created_at.slice(0, 16)}</span>
                 </p>
                 <p className={`text-sm break-words line-clamp-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                  <Highlight text={r.content} keyword={keyword} />
+                  <Highlight text={snippetOf(r.content, keyword)} keyword={keyword} />
                 </p>
                 {r.hit_note && r.hit_note_label && (
                   <p className={`text-sm break-words line-clamp-2 mt-0.5 ${isDarkMode ? 'text-amber-300' : 'text-amber-600'}`}>
                     <span className="text-xs opacity-80">{r.hit_note_label}：</span>
-                    <Highlight text={r.hit_note} keyword={keyword} />
+                    <Highlight text={snippetOf(r.hit_note, keyword)} keyword={keyword} />
                   </p>
                 )}
-                {scopeAll && (
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    来自{r.is_dm === 1 ? '私聊' : '群聊'}「{r.group_name}」· 点击跳转
-                  </p>
-                )}
-              </button>
+                <div className="flex items-center justify-between gap-2 mt-1">
+                  <span className="text-xs text-gray-400 truncate">
+                    {scopeAll ? `来自${r.is_dm === 1 ? '私聊' : '群聊'}「${r.group_name}」` : ''}
+                  </span>
+                  <button
+                    onClick={() => onJump(r.group_id, r.id)}
+                    className={`flex items-center gap-1 flex-shrink-0 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+                      isDarkMode ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                    title="在聊天中定位这条消息"
+                  >
+                    <CornerUpRight className="w-3.5 h-3.5" />
+                    跳转
+                  </button>
+                </div>
+              </div>
             ))
           )}
           {mode === 'message' && hasMore && (

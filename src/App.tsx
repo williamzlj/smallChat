@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Menu, X, Info, Hash, Search, ListTodo, Pin, MessageCircle, Flag, CheckCheck, Megaphone, ArrowLeft, Wallet, Banknote, ChevronDown, Check, ChevronsDown, History } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { AvatarCropModal } from './components/AvatarCropModal';
@@ -144,8 +144,8 @@ export default function App() {
 
   useEffect(() => {
     const check = () => {
-      // 断点与 CSS 的 lg（1024px）对齐：lg 以下侧边栏为抽屉浮层，避免 768~1024 区间 fixed 侧栏遮挡聊天区
-      const mobile = window.innerWidth < 1024;
+      // 布局分界 768px：侧栏并排 / 抽屉切换（头部图标另有单独的 580px 判定）
+      const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
       setSidebarVisible(!mobile);
     };
@@ -362,7 +362,7 @@ export default function App() {
     </button>
   );
 
-  // 桌面端（lg 及以上）头部常用功能图标按钮：直接展开，不收纳进下拉
+  // 头部常用功能图标按钮：≥580px 直接展开（独立于 768px 的布局分界）
   const headerIconBtn = (
     icon: React.ReactNode,
     title: string,
@@ -585,8 +585,13 @@ export default function App() {
     showToast('已转发');
   };
 
-  const handleSearchJump = (gid: number) => {
+  // 搜索结果跳转：带消息 id 时定位并高亮该条（与待办/重要面板一致），否则仅切群
+  const handleSearchJump = (gid: number, msgId?: number) => {
     setSearchOpen(false);
+    if (msgId) {
+      handlePanelJump(gid, msgId);
+      return;
+    }
     if (gid !== currentGroupId) selectGroup(gid);
   };
 
@@ -716,7 +721,7 @@ export default function App() {
       {/* 侧边栏：桌面常驻 / 移动抽屉 */}
       {(sidebarVisible || !isMobile) && (
         <div
-          className={`fixed lg:static inset-y-0 left-0 z-40 transform transition-transform duration-300 lg:translate-x-0 ${
+          className={`fixed md:static inset-y-0 left-0 z-40 transform transition-transform duration-300 md:translate-x-0 ${
             sidebarVisible ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
@@ -770,13 +775,13 @@ export default function App() {
 
       {sidebarVisible && isMobile && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
+          className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden"
           onClick={() => setSidebarVisible(false)}
         />
       )}
 
       {/* 主区域 */}
-      <div className="flex-1 flex flex-col min-w-0 w-full lg:w-auto">
+      <div className="flex-1 flex flex-col min-w-0 w-full md:w-auto">
         {/* 待办/重要面板常驻挂载：切到聊天再返回时保持筛选条件、列表数据与滚动位置 */}
         <div className={`flex-1 flex flex-col min-h-0 ${view === 'todos' ? '' : 'hidden'}`}>
           <TodoPanel
@@ -826,7 +831,7 @@ export default function App() {
               >
                 <button
                   onClick={() => setSidebarVisible(!sidebarVisible)}
-                  className={`p-1.5 rounded-lg lg:hidden flex-shrink-0 ${
+                  className={`p-1.5 rounded-lg md:hidden flex-shrink-0 ${
                     isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'
                   }`}
                 >
@@ -862,7 +867,7 @@ export default function App() {
                 )}
                 <button
                   onClick={() => setSidebarVisible(!sidebarVisible)}
-                  className={`p-1.5 rounded-lg lg:hidden flex-shrink-0 ${
+                  className={`p-1.5 rounded-lg md:hidden flex-shrink-0 ${
                     isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'
                   }`}
                 >
@@ -879,8 +884,8 @@ export default function App() {
                 </div>
               </div>
               <div className="flex items-center flex-shrink-0">
-                {/* 桌面端：常用功能直接展开为图标按钮，方便操作 */}
-                <div className="hidden lg:flex items-center gap-0.5 mr-1">
+                {/* 头部图标独立断点：≥580 展开为图标按钮（与布局分界 768 解耦） */}
+                <div className="hidden min-[580px]:flex items-center gap-0.5 mr-1">
                   {headerIconBtn(
                     <ListTodo className="w-5 h-5" />,
                     todoOnly ? '退出只看待办' : '只看待办',
@@ -967,8 +972,8 @@ export default function App() {
                   )}
                 </div>
 
-                {/* 移动端：收纳为下拉菜单 */}
-                <div className="relative lg:hidden">
+                {/* 与上面图标按钮同一断点：<580 才收纳为下拉菜单 */}
+                <div className="relative min-[580px]:hidden">
                   <button
                     onClick={() => setHeaderMenu((v) => !v)}
                     className={`relative p-2 rounded-lg ${
@@ -1277,18 +1282,18 @@ export default function App() {
         />
       )}
 
-      {searchOpen && (
-        <SearchPanel
-          currentGroupId={currentGroupId}
-          currentGroupName={groupTitle}
-          groups={groups}
-          isDarkMode={isDarkMode}
-          onJump={handleSearchJump}
-          onClose={() => setSearchOpen(false)}
-          defaultScopeAll={searchScopeAll}
-          defaultMode={searchMode}
-        />
-      )}
+      {/* 搜索面板常驻挂载：关闭只是隐藏，再次打开仍保留上次的关键词与结果（可随时"回到搜索结果"） */}
+      <SearchPanel
+        open={searchOpen}
+        currentGroupId={currentGroupId}
+        currentGroupName={groupTitle}
+        groups={groups}
+        isDarkMode={isDarkMode}
+        onJump={handleSearchJump}
+        onClose={() => setSearchOpen(false)}
+        defaultScopeAll={searchScopeAll}
+        defaultMode={searchMode}
+      />
 
       {forwardMsgs && (
         <ForwardModal

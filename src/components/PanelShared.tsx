@@ -521,9 +521,13 @@ export const PanelItem = ({
             </div>
 
             {/* 行 B：备注类（提醒/待办备注/公共备注/我的备注），紧贴正文；已归档则灰化 */}
-            {/* 折叠模式下隐藏详情，点右侧箭头单独展开 */}
-            {showDetail && (
-              <>
+            {/* 折叠模式下详情用高度 + 淡入动画展开/收起（0fr → 1fr），点整条或右侧箭头切换 */}
+            <div
+              className={`grid transition-all duration-300 ease-out ${
+                showDetail ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+              }`}
+            >
+              <div className="overflow-hidden min-w-0 space-y-1">
             {msg.due_at &&
               (isOverdueTodo(msg.due_at, msg.todo_status) ? (
                 <p
@@ -583,8 +587,8 @@ export const PanelItem = ({
               {/* 已归档只显示 Archive 图标，不再重复文字 */}
               {archived && <Archive className="w-3.5 h-3.5 flex-shrink-0" />}
             </div>
-              </>
-            )}
+              </div>
+            </div>
           </div>
         </div>
       </div>
