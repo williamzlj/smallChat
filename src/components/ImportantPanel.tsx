@@ -45,6 +45,9 @@ export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, 
   const [selected, setSelected] = useState<Set<number>>(new Set());
   // 上下文弹窗
   const [contextMsg, setContextMsg] = useState<CrossGroupMessage | null>(null);
+  // 折叠模式：只显示标题，隐藏备注/群名等次要信息（右侧可单独展开某条）
+  const [compact, setCompact] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -272,6 +275,18 @@ export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, 
           <Archive className="w-3.5 h-3.5" />
           {showArchived ? '含已归档' : '查看已归档'}
         </button>
+        {/* 折叠模式：只显示标题，隐藏备注/群名等次要信息 */}
+        <button
+          onClick={() => setCompact(!compact)}
+          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+            compact
+              ? 'bg-indigo-500 text-white'
+              : isDarkMode ? 'bg-gray-700 text-gray-400' : 'bg-white text-gray-500'
+          }`}
+          title="折叠后每条只显示标题，右侧可单独展开"
+        >
+          {compact ? '展开事项' : '折叠事项'}
+        </button>
       </div>
 
       {selectMode && (
@@ -321,6 +336,16 @@ export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, 
               onView={(msg) => onJump(msg.group_id, msg.id)}
               onViewContext={(msg) => setContextMsg(msg)}
               onContextMenu={openMenu}
+              compact={compact}
+              expanded={expandedIds.has(m.id)}
+              onToggleExpand={() =>
+                setExpandedIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(m.id)) next.delete(m.id);
+                  else next.add(m.id);
+                  return next;
+                })
+              }
             />
           ))
         )}

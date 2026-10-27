@@ -357,7 +357,14 @@ export const PanelItem = ({
       onTouchEnd={cancelPress}
       onTouchMove={cancelPress}
       onTouchCancel={cancelPress}
-      onClick={() => selectMode && onToggleSelect(msg.id)}
+      onClick={() => {
+        if (selectMode) {
+          onToggleSelect(msg.id);
+          return;
+        }
+        // 折叠模式下点整条即展开/收起，方便临时查看被折叠的详情（文本选择模式下不触发）
+        if (compact && onToggleExpand && !selectable) onToggleExpand();
+      }}
       className={`relative w-full text-left px-3 py-2.5 rounded-xl mb-1.5 transition-colors cursor-pointer ${
         selectable ? 'select-text' : 'select-none'
       } ${borderCls} ${
@@ -446,10 +453,12 @@ export const PanelItem = ({
 
           {/* 右侧：正文 + 备注 + 次要信息（全部左对齐；已归档则整体灰化） */}
           <div className="flex-1 min-w-0 space-y-1">
-            {/* 行 A：消息正文（最多 3 行）+ 右侧操作按钮 */}
+            {/* 行 A：消息正文（正常最多 3 行；折叠态压成单行省略号）+ 右侧操作按钮 */}
             <div className="flex items-start gap-1.5">
               <p
-                className={`break-words flex-1 min-w-0 ${selectable ? '' : 'line-clamp-3'} ${
+                className={`break-words flex-1 min-w-0 ${
+                  selectable ? '' : showDetail ? 'line-clamp-3' : 'truncate'
+                } ${
                   archived
                     ? 'text-gray-400 dark:text-gray-500'
                     : isDarkMode
