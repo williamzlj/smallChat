@@ -141,21 +141,23 @@ export const useChat = (
           setHasMore(has_more_before === 1);
           return;
         }
-        const { messages: list, max_id } = await api.messagesList(
+        // 进入群聊要看到最新消息：用 history 接口取「最新一页」（messages.list 的 since_id=0
+        // 是按 id 升序取最早的一页，群消息超过一页时会先停在旧消息上，再靠轮询慢慢补）
+        const { messages: list, has_more } = await api.messagesHistory(
           groupId,
           0,
           INITIAL_MSG_LIMIT,
         );
         if (cancelled || groupIdRef.current !== groupId) return;
         setMessages(list);
-        maxIdRef.current = max_id;
         if (list.length > 0) {
+          maxIdRef.current = list[list.length - 1].id;
           minIdRef.current = list[0].id;
-          // 拉满一页说明可能还有更早的历史
-          setHasMore(list.length >= INITIAL_MSG_LIMIT);
+          setHasMore(has_more === 1);
           // 用服务器最新一页覆盖缓存（旧缓存里的更早历史会在 loadMore 时重新并入）
           void writeMsgCache(groupId, list);
         } else {
+          maxIdRef.current = 0;
           setHasMore(false);
         }
     } catch (e) {
@@ -206,6 +208,18 @@ export const useChat = (
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [groupId, mergeMessages]);
+
+  // 消息变化后防抖写回本地缓存：轮询补进来的新消息、删除/状态变更都会落盘，
+  // 否则再次进入群聊时只会上次初始加载的旧缓存，看起来像"最新消息又不见了"
+  useEffect(() => {
+    if (groupId === null || focusMsgId) return;
+    // 切群瞬间 messages 仍是上一个群的，确认归属后再写，避免把旧群消息写进新群缓存
+    if (messages.length === 0 || messages[0].group_id !== groupId) return;
+    const timer = setTimeout(() => {
+      void writeMsgCache(groupId, messages);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [groupId, focusMsgId, messages]);
 
   // 向上加载更早的历史
   const loadMore = useCallback(async () => {
