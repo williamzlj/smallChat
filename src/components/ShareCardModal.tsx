@@ -2,7 +2,7 @@
 // 字号/字体/边距/卡片签名/日期署名开关仅记在浏览器 localStorage，不进后端数据库
 import { useEffect, useRef, useState } from 'react';
 import { toPng } from 'html-to-image';
-import { X, ImageDown, Share2, Loader2, Bold, Copy, Check } from 'lucide-react';
+import { X, ImageDown, Share2, Loader2, Bold, Copy, Check, Pipette, RotateCcw } from 'lucide-react';
 import { ChatMessage } from '../api/types';
 import { API_BASE } from '../config';
 import { tokenStore } from '../api/client';
@@ -14,15 +14,19 @@ interface Props {
   onClose: () => void;
 }
 
-type CardTheme = 'light' | 'dark' | 'blue' | 'orange' | 'green';
+type CardTheme = 'light' | 'dark' | 'blue' | 'orange' | 'green' | 'custom';
 
 // 卡片配色固定，不随 App 暗色模式变化（弹窗内单独切换）；蓝/橙/绿为分享向低饱和配色
+// 各样式差异只在 5 个颜色：卡片背景 bg / 正文 text / 辅助文字（日期、署名、昵称）aux /
+// 强调色（双引号、竖线、署名小方块）quote / 分割线 line；custom 这 5 项由用户逐项覆盖
 const THEMES: Record<CardTheme, { bg: string; text: string; quote: string; aux: string; line: string }> = {
   light: { bg: '#FFFFFF', text: '#1F2937', quote: '#0FDC78', aux: '#9CA3AF', line: '#E5E7EB' },
   dark: { bg: '#18181B', text: '#F4F4F5', quote: '#32F08C', aux: '#71717A', line: '#3F3F46' },
   blue: { bg: '#EFF6FF', text: '#1E3A5F', quote: '#2563EB', aux: '#93A3B8', line: '#BFDBFE' },
   orange: { bg: '#FFF7ED', text: '#44403C', quote: '#EA580C', aux: '#A8A29E', line: '#FED7AA' },
   green: { bg: '#F0FDF4', text: '#1F2937', quote: '#16A34A', aux: '#8FA79B', line: '#BBF7D0' },
+  // 自定义样式的默认值（首次切到自定义时等同浅色，之后由用户逐项改）
+  custom: { bg: '#FFFFFF', text: '#1F2937', quote: '#0FDC78', aux: '#9CA3AF', line: '#E5E7EB' },
 };
 
 // 字体选项（流量优先：unicode-range 切片按需加载，固定版本号 URL 浏览器缓存 1 年，均免费商用）：
@@ -232,11 +236,33 @@ async function buildFontEmbedCss(web: WebFont, content: string, bold: boolean): 
 
 const FONT_MIN = 12;
 const FONT_MAX = 24;
+// 标题字号独立可调范围（与正文字号解耦）
+const TITLE_MIN = 12;
+const TITLE_MAX = 48;
+// 日期/署名字号范围（未设置时跟随正文联动值）
+const AUX_MIN = 10;
+const AUX_MAX = 24;
+// 卡片文字常用颜色（标题/正文共用；另提供取色器自定义）
+const CARD_COLORS = ['#000000', '#FFFFFF', '#6B7280', '#DC2626', '#EA580C', '#16A34A', '#2563EB'];
+// 自定义样式的可调颜色字段（与 THEMES 的 bg/text/aux/quote/line 一一对应）
+const CUSTOM_FIELDS = ['customBg', 'customText', 'customAux', 'customQuote', 'customLine'] as const;
+// 判断颜色是否偏浅：浅色底上用深色勾，深色底上用白色勾
+const isLightColor = (hex: string) => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 150;
+};
 
 // 外观设置持久化在浏览器本地（跨会话记忆，仅本设备生效）
 const STYLE_KEY = 'smallchat-card-style';
-// 常用签名最多保存个数
+// 常用签名/标题最多保存个数
 const MAX_SIGNATURES = 6;
+const MAX_TITLES = 6;
+// 日期显示位置：四个角（左下角为默认；左上/右下不常用但一并支持）
+type DatePos = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+// 标题对齐：居中（默认）/ 左对齐（左侧改用主题色竖线替代双引号）
+type TitleAlign = 'center' | 'left';
 const loadStyle = (): {
   theme: CardTheme;
   fontSize: number;
@@ -248,9 +274,26 @@ const loadStyle = (): {
   showNickname: boolean; // 多消息卡片是否显示每条的发送者昵称
   showQuote: boolean; // 卡片是否显示顶部装饰双引号
   showTitle: boolean; // 卡片是否显示顶部标题
+  datePos: DatePos; // 日期显示位置
+  titleAlign: TitleAlign; // 标题对齐方式
+  titleSize: number; // 标题字号（与正文字号解耦）
+  titleColor?: string; // 标题颜色（#RRGGBB）；缺省按卡片底色自动取黑/白
+  bodyColor?: string; // 正文字色（#RRGGBB）；缺省表示跟随主题
+  dateSize?: number; // 日期字号；缺省跟随正文联动
+  dateColor?: string; // 日期颜色；缺省跟随主题
+  sigSize?: number; // 署名字号；缺省跟随正文联动
+  sigColor?: string; // 署名颜色；缺省跟随主题
+  customBg?: string; // 自定义样式的 5 个颜色（theme = custom 时生效）
+  customText?: string;
+  customAux?: string;
+  customQuote?: string;
+  customLine?: string;
+  bgOverride?: string; // 「修改配色」只改背景/强调色：覆盖当前样式的底色（自定义样式下改的是 customBg）
+  accentOverride?: string; // 覆盖当前样式的强调色（双引号/竖线/署名小方块）
   signature?: string;
   signatures?: string[]; // 常用签名列表（最多 MAX_SIGNATURES 个）
   title?: string; // 卡片标题（顶部居中，与双引号同行同字号同色）
+  titles?: string[]; // 常用标题列表（最多 MAX_TITLES 个）
 } => {
   try {
     const raw = localStorage.getItem(STYLE_KEY);
@@ -264,10 +307,40 @@ const loadStyle = (): {
         // signature/title 缺省（老数据没有这个字段）时返回 undefined，由调用方决定是否迁移/按空处理
         const signature = typeof s.signature === 'string' ? s.signature : undefined;
         const title = typeof s.title === 'string' ? s.title : undefined;
-        // 常用签名列表：老数据没有该字段时返回 undefined（由调用方用当前签名做迁移）
+        // 常用签名/标题列表：老数据没有该字段时返回 undefined（由调用方用当前值做迁移）
         const signatures = Array.isArray(s.signatures)
           ? s.signatures.filter((x: unknown): x is string => typeof x === 'string').slice(0, MAX_SIGNATURES)
           : undefined;
+        const titles = Array.isArray(s.titles)
+          ? s.titles.filter((x: unknown): x is string => typeof x === 'string').slice(0, MAX_TITLES)
+          : undefined;
+        // 日期位置：老数据 'bottom'/'top' 分别迁移到左下角/右上角，缺省默认左下角
+        const datePos: DatePos =
+          s.datePos === 'top' || s.datePos === 'top-right'
+            ? 'top-right'
+            : s.datePos === 'top-left'
+              ? 'top-left'
+              : s.datePos === 'bottom-right'
+                ? 'bottom-right'
+                : 'bottom-left';
+        // 标题对齐：缺省居中
+        const titleAlign: TitleAlign = s.titleAlign === 'left' ? 'left' : 'center';
+        // 标题字号/颜色：与正文解耦；老数据按「正文×1.6（上限32）」和主题色迁移，保证观感不变
+        const titleSize = Number.isInteger(s.titleSize) && s.titleSize >= TITLE_MIN && s.titleSize <= TITLE_MAX
+          ? s.titleSize
+          : Math.min(Math.round(fs * 1.6), 32);
+        const titleColor = typeof s.titleColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(s.titleColor)
+          ? s.titleColor
+          : undefined;
+        // 正文字色：无值=跟随主题（老数据自然走默认）
+        const bodyColor = typeof s.bodyColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(s.bodyColor)
+          ? s.bodyColor
+          : undefined;
+        // 日期/署名的字号与颜色：无值=跟随正文联动字号 / 主题辅助色
+        const auxSizeField = (v: unknown) =>
+          Number.isInteger(v) && (v as number) >= AUX_MIN && (v as number) <= AUX_MAX ? (v as number) : undefined;
+        const auxColorField = (v: unknown) =>
+          typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : undefined;
         // showDate/showSignature/showNickname/showQuote/showTitle 缺省（老数据没有这个字段）时默认显示
         return {
           theme,
@@ -280,28 +353,46 @@ const loadStyle = (): {
           showNickname: s.showNickname !== false,
           showQuote: s.showQuote !== false,
           showTitle: s.showTitle !== false,
+          datePos,
+          titleAlign,
+          titleSize,
+          titleColor,
+          bodyColor,
+          dateSize: auxSizeField(s.dateSize),
+          dateColor: auxColorField(s.dateColor),
+          sigSize: auxSizeField(s.sigSize),
+          sigColor: auxColorField(s.sigColor),
+          customBg: auxColorField(s.customBg),
+          customText: auxColorField(s.customText),
+          customAux: auxColorField(s.customAux),
+          customQuote: auxColorField(s.customQuote),
+          customLine: auxColorField(s.customLine),
+          bgOverride: auxColorField(s.bgOverride),
+          accentOverride: auxColorField(s.accentOverride),
           signature,
           signatures,
           title,
+          titles,
         };
       }
     }
   } catch {
     // 损坏数据按默认处理
   }
-  return { theme: 'light', fontSize: 16, fontKey: 'default', padKey: 'standard', bold: false, showDate: true, showSignature: true, showNickname: true, showQuote: true, showTitle: true };
+  return { theme: 'light', fontSize: 16, fontKey: 'default', padKey: 'standard', bold: false, showDate: true, showSignature: true, showNickname: true, showQuote: true, showTitle: true, datePos: 'bottom-left', titleAlign: 'center', titleSize: 26 };
 };
 
 const isMobile = () => /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 // 「修改文本」小弹窗的目标字段（nick 仅多消息卡片出现）
-type TextEditTarget = 'sig' | 'date' | 'title' | 'body' | 'nick';
+type TextEditTarget = 'sig' | 'date' | 'title' | 'body' | 'nick' | 'color';
 const TEXT_EDIT_TITLES: Record<TextEditTarget, string> = {
   sig: '修改署名',
   date: '修改日期',
   title: '修改标题',
   body: '修改正文',
   nick: '修改昵称',
+  color: '修改配色',
 };
 
 // 自动高度文本框：随内容撑高——长段落没有换行符时按行数估算不准，直接量 scrollHeight 才可靠；
@@ -349,6 +440,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
     delete s.signature; // 签名单独管，不混在样式选项里
     delete s.signatures; // 常用签名列表单独管
     delete s.title; // 标题单独管，不混在样式选项里
+    delete s.titles; // 常用标题列表单独管
     return s;
   });
   // 卡片签名仅存浏览器：本地没有时以服务器值（cardSignature prop）为初始值做一次性迁移，老用户无感；留空则卡片不显示署名
@@ -362,6 +454,13 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
   });
   // 卡片标题仅存浏览器（与署名同模式），顶部居中显示；留空则不显示
   const [title, setTitle] = useState<string>(() => loadStyle().title ?? '');
+  // 常用标题列表（仅存浏览器本地，最多 MAX_TITLES 个）：老数据用当前标题做一次性迁移
+  const [titles, setTitles] = useState<string[]>(() => {
+    const s = loadStyle();
+    if (s.titles && s.titles.length > 0) return s.titles.slice(0, MAX_TITLES);
+    const seed = (s.title ?? '').trim();
+    return seed ? [seed] : [];
+  });
   // 「修改文本」独立小弹窗：当前打开哪一个（null=都不开）
   const [textEdit, setTextEdit] = useState<TextEditTarget | null>(null);
   // 日期覆写：仅本次打开生效（进 localStorage 会串到别的消息的卡片上），留空用消息默认日期
@@ -380,7 +479,24 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
   const cardRef = useRef<HTMLDivElement>(null);
   const copyTimer = useRef<number | undefined>(undefined);
 
-  const t = THEMES[theme];
+  // 自定义样式：以 custom 默认色为底，逐项用用户设置覆盖
+  // 非自定义样式也可在「修改配色」里只覆盖背景/强调色，其余颜色仍走样式预设
+  const t =
+    theme === 'custom'
+      ? {
+          bg: style.customBg ?? THEMES.custom.bg,
+          text: style.customText ?? THEMES.custom.text,
+          quote: style.customQuote ?? THEMES.custom.quote,
+          aux: style.customAux ?? THEMES.custom.aux,
+          line: style.customLine ?? THEMES.custom.line,
+        }
+      : {
+          ...THEMES[theme],
+          bg: style.bgOverride ?? THEMES[theme].bg,
+          quote: style.accentOverride ?? THEMES[theme].quote,
+        };
+  // 标题颜色默认值：按卡片底色明暗自动取黑/白（自定义深底色也能看清）
+  const titleColorHex = style.titleColor ?? (isLightColor(t.bg) ? '#000000' : '#F5F5F5');
   const font = FONT_OPTS[style.fontKey].stack;
   const padding = PAD_OPTS[style.padKey].value;
   // 「修改正文」编辑框所见即所得：编辑框本体即白色卡片——宽度 = 白色卡片宽度（预览灰框 380 − 灰色内边距 24 = 356），
@@ -468,11 +584,11 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
   // 外观设置（含卡片样式主题、签名、标题）写入浏览器本地
   useEffect(() => {
     try {
-      localStorage.setItem(STYLE_KEY, JSON.stringify({ ...style, theme, signature, signatures, title }));
+      localStorage.setItem(STYLE_KEY, JSON.stringify({ ...style, theme, signature, signatures, title, titles }));
     } catch {
       // 存储不可用时忽略（无痕模式等）
     }
-  }, [style, theme, signature, signatures, title]);
+  }, [style, theme, signature, signatures, title, titles]);
 
   // 外观/文本变化后，之前生成的图片作废
   useEffect(() => setImgUrl(''), [theme, style, signature, title, dateOverride, contentEdits, nickEdits]);
@@ -606,7 +722,94 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
     </button>
   );
 
-  const auxSize = Math.max(12, Math.round(style.fontSize * 0.8)); // 日期/署名/水印随正文字号联动
+  const auxSize = Math.max(12, Math.round(style.fontSize * 0.8)); // 昵称/文件说明随正文字号联动
+  // 「恢复默认」图标按钮（字号/颜色等被改乱后一键复位）
+  const resetBtn = (isDefault: boolean, onClick: () => void, label: string, extraCls = '') => (
+    <button
+      onClick={onClick}
+      disabled={isDefault}
+      title={label}
+      aria-label={label}
+      className={`${extraCls} w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg ${
+        isDefault
+          ? isDarkMode
+            ? 'text-gray-600 cursor-default'
+            : 'text-gray-300 cursor-default'
+          : isDarkMode
+            ? 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+            : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+      }`}
+    >
+      <RotateCcw className="w-4 h-4" />
+    </button>
+  );
+
+  // 一键复位「配色/标题/正文/日期/署名」的用户设置（只动有默认值的样式项，不动标题/署名文字内容）
+  const resetUserSettings = () => {
+    const ok = window.confirm(
+      '确定把配色、标题、正文、日期、署名的样式设置恢复默认吗？\n（含字号、文字颜色、背景/强调色、标题对齐、日期位置等；不会清空标题和署名文字）',
+    );
+    if (!ok) return;
+    setStyle((s) => ({
+      ...s,
+      fontSize: 16,
+      bold: false,
+      titleSize: 26,
+      titleColor: undefined,
+      titleAlign: 'center',
+      bodyColor: undefined,
+      dateSize: undefined,
+      dateColor: undefined,
+      datePos: 'bottom-left',
+      sigSize: undefined,
+      sigColor: undefined,
+      bgOverride: undefined,
+      accentOverride: undefined,
+      customBg: undefined,
+      customText: undefined,
+      customAux: undefined,
+      customQuote: undefined,
+      customLine: undefined,
+    }));
+  };
+  // 日期、署名：可在各自弹窗独立设置字号/颜色，未设置时跟随正文联动值与主题色
+  const dateFontSize = style.dateSize ?? auxSize;
+  const dateColorHex = style.dateColor ?? t.aux;
+  const sigFontSize = style.sigSize ?? auxSize;
+  const sigColorHex = style.sigColor ?? t.aux;
+
+  // 日期四个角：左上/右上与引号、标题同一行；左上角额外让出一行，避免盖住大引号
+  const dateTopLeft = style.showDate && style.datePos === 'top-left';
+  const dateTopRight = style.showDate && style.datePos === 'top-right';
+  const dateBottomLeft = style.showDate && style.datePos === 'bottom-left';
+  const dateBottomRight = style.showDate && style.datePos === 'bottom-right';
+  const titleTopOffset = dateTopLeft ? Math.round(dateFontSize * 1.4) : 0;
+  // 标题左对齐时，左侧双引号让位给主题色竖线（无标题时仍按「显示双引号」开关走）
+  const titleLeft = style.titleAlign === 'left';
+  const showTopQuote = style.showQuote && !(titleLeft && title.trim() !== '');
+
+  // 署名+小方块 baseline 对齐：空 inline-block 的 baseline 即其底边，方块底正好落在文字基线上（中文字形底≈基线），任何字号下视觉都是"与文字底对齐"
+  const signatureNode = style.showSignature ? (
+    <span className="flex items-baseline" style={{ color: sigColorHex, fontSize: sigFontSize }}>
+      {signature}
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          backgroundColor: t.quote,
+          borderRadius: 2,
+          display: 'inline-block',
+          marginLeft: 6,
+          flexShrink: 0,
+        }}
+      />
+    </span>
+  ) : null;
+
+  // 日期文本节点：字号/颜色可在「修改日期」里独立设置
+  const dateNode = (
+    <span style={{ color: dateColorHex, fontSize: dateFontSize, whiteSpace: 'nowrap' }}>{dateLabel}</span>
+  );
 
   // 「修改文本」入口按钮（署名/日期/标题/正文/昵称共用样式，每个打开自己的小弹窗）
   const textEditBtn = (target: TextEditTarget, label: string) => (
@@ -659,6 +862,111 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
       )}
     </div>
   );
+
+  // 颜色选择行（标题/正文/背景/强调色共用）：可选「默认」，预设色圆点，末尾矩形取色器
+  // defaultColor 仅用于取色器按钮上的当前色预览（如背景色的主题默认值）
+  const swatchRow = (
+    current: string | undefined,
+    onChange: (color?: string) => void,
+    withDefault: boolean,
+    defaultColor?: string,
+  ) => {
+    const isPreset = !!current && CARD_COLORS.some((c) => c.toLowerCase() === current.toLowerCase());
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {withDefault && (
+          <button
+            onClick={() => onChange(undefined)}
+            className={`h-7 px-2 text-sm rounded-full border ${
+              !current
+                ? 'border-green-500 text-green-600'
+                : isDarkMode
+                  ? 'border-gray-500 text-gray-300 hover:bg-gray-700'
+                  : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            默认
+          </button>
+        )}
+        {CARD_COLORS.map((c) => {
+          const selected = !!current && current.toLowerCase() === c.toLowerCase();
+          return (
+            <button
+              key={c}
+              onClick={() => onChange(c)}
+              title={c}
+              aria-label={`颜色 ${c}`}
+              // 用实心 2px 边框代替 ring/box-shadow：阴影类边缘会二次抗锯齿、看起来发虚
+              className={`w-7 h-7 flex-shrink-0 rounded-full flex items-center justify-center border-2 ${
+                selected ? 'border-green-500' : isDarkMode ? 'border-gray-500' : 'border-gray-300'
+              }`}
+              style={{ backgroundColor: c }}
+            >
+              {selected && (
+                <Check className="w-3.5 h-3.5" strokeWidth={3} style={{ color: isLightColor(c) ? '#374151' : '#FFFFFF' }} />
+              )}
+            </button>
+          );
+        })}
+        {/* 自定义颜色：矩形按钮 + 取色器图标 + 当前颜色小方块，避免被误认成颜色圆点 */}
+        <label
+          title="自定义颜色"
+          className={`ml-1 flex items-center gap-1 h-7 px-2 rounded-md border text-sm cursor-pointer ${
+            current && !isPreset
+              ? 'border-green-500 text-green-600'
+              : isDarkMode
+                ? 'border-gray-500 text-gray-300 hover:bg-gray-700'
+                : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          <Pipette className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="whitespace-nowrap">自定义</span>
+          <span
+            className={`w-3 h-3 rounded-sm border flex-shrink-0 ${isDarkMode ? 'border-gray-500' : 'border-gray-300'}`}
+            style={{ backgroundColor: current ?? defaultColor ?? t.text }}
+          />
+          <input
+            type="color"
+            value={current ?? '#000000'}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-0 h-0 opacity-0"
+          />
+        </label>
+      </div>
+    );
+  };
+  // 可选颜色字段：选「默认」时删掉字段，回到主题色
+  const setOptionalColor = (key: 'dateColor' | 'sigColor' | 'bodyColor', color?: string) =>
+    setStyle((s) => {
+      const next = { ...s };
+      if (color) next[key] = color;
+      else delete next[key];
+      return next;
+    });
+
+  // 自定义样式颜色：传 undefined 表示恢复该字段默认
+  const setCustomThemeColor = (field: (typeof CUSTOM_FIELDS)[number], color?: string) =>
+    setStyle((s) => {
+      const next = { ...s };
+      next[field] = color;
+      return next;
+    });
+
+  // 可选覆盖色（非自定义样式）：传 undefined 删除字段
+  const setOverrideColor = (key: 'bgOverride' | 'accentOverride', color?: string) =>
+    setStyle((s) => {
+      const next = { ...s };
+      next[key] = color;
+      return next;
+    });
+  // 「修改配色」弹窗：自定义样式下直接改 custom 字段，其余样式写入 bg/accent 覆盖
+  const colorEditBg = theme === 'custom' ? style.customBg : style.bgOverride;
+  const colorEditAccent = theme === 'custom' ? style.customQuote : style.accentOverride;
+  const setColorEditBg = (c?: string) =>
+    theme === 'custom' ? setCustomThemeColor('customBg', c) : setOverrideColor('bgOverride', c);
+  const setColorEditAccent = (c?: string) =>
+    theme === 'custom' ? setCustomThemeColor('customQuote', c) : setOverrideColor('accentOverride', c);
+
   const setContentEdit = (id: number, value: string, original: string) =>
     setContentEdits((prev) => {
       const next = { ...prev };
@@ -685,6 +993,15 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
     setSignatures((prev) => [...prev, currentSig]);
   };
   const removeSignature = (name: string) => setSignatures((prev) => prev.filter((n) => n !== name));
+
+  // 常用标题：与签名同一套交互（保存当前 / 点击切换 / × 删除），最多 MAX_TITLES 个
+  const currentTitle = title.trim();
+  const canSaveTitle = currentTitle !== '' && !titles.includes(currentTitle) && titles.length < MAX_TITLES;
+  const addTitle = () => {
+    if (!canSaveTitle) return;
+    setTitles((prev) => [...prev, currentTitle]);
+  };
+  const removeTitle = (name: string) => setTitles((prev) => prev.filter((n) => n !== name));
 
   return (
     <>
@@ -714,7 +1031,59 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                 {optBtn(theme === 'blue', () => setTheme('blue'), '蓝')}
                 {optBtn(theme === 'orange', () => setTheme('orange'), '橙')}
                 {optBtn(theme === 'green', () => setTheme('green'), '绿')}
+                {optBtn(theme === 'custom', () => setTheme('custom'), '自定义')}
               </>,
+            )}
+            {theme === 'custom' && (
+              <div className={`rounded-lg border px-2 py-1.5 ${isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-gray-50'}`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>自定义配色</span>
+                  <button
+                    onClick={() => CUSTOM_FIELDS.forEach((f) => setCustomThemeColor(f, undefined))}
+                    className={`text-xs ${isDarkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
+                  >
+                    恢复默认
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(
+                    [
+                      ['customBg', '背景', 'bg'],
+                      ['customText', '正文', 'text'],
+                      ['customAux', '辅助文字', 'aux'],
+                      ['customQuote', '强调色', 'quote'],
+                      ['customLine', '分割线', 'line'],
+                    ] as const
+                  ).map(([field, label, key]) => {
+                    const value = style[field] ?? THEMES.custom[key];
+                    return (
+                      <label
+                        key={field}
+                        title={`${label}颜色`}
+                        className={`flex items-center gap-1.5 h-8 px-2 rounded-md border cursor-pointer ${
+                          isDarkMode ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-white'
+                        }`}
+                      >
+                        <span className={`flex-1 min-w-0 truncate text-xs ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>{label}</span>
+                        <span
+                          className={`w-4 h-4 flex-shrink-0 rounded-sm border ${isDarkMode ? 'border-gray-500' : 'border-gray-300'}`}
+                          style={{ backgroundColor: value }}
+                        />
+                        <span className={`text-xs tabular-nums ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{value.toUpperCase()}</span>
+                        <input
+                          type="color"
+                          value={value}
+                          onChange={(e) => setCustomThemeColor(field, e.target.value)}
+                          className="w-0 h-0 opacity-0"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className={`mt-1.5 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                  改这 5 个颜色即可复刻任意样式；文字颜色也可在「修改标题 / 正文 / 日期 / 署名」里单独设置
+                </p>
+              </div>
             )}
             {settingRow(
               '字号',
@@ -728,6 +1097,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                   className="flex-1 min-w-[120px] accent-green-500"
                 />
                 <span className={`w-10 text-right text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{style.fontSize}px</span>
+                {resetBtn(style.fontSize === 16, () => setStyle((s) => ({ ...s, fontSize: 16 })), '恢复默认字号 16px')}
                 <button
                   onClick={() => setStyle((s) => ({ ...s, bold: !s.bold }))}
                   title="正文加粗"
@@ -757,15 +1127,17 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                 optBtn(style.padKey === key, () => setStyle((s) => ({ ...s, padKey: key })), o.label),
               ),
             )}
-            {/* 修改：署名/日期/标题/正文/昵称（昵称仅多消息卡片）各自独立小弹窗，改哪项点哪项 */}
+            {/* 修改：配色/标题/正文/日期/署名/昵称（昵称仅多消息卡片）各自独立小弹窗，改哪项点哪项 */}
             {settingRow(
               '修改',
               <>
-                {textEditBtn('sig', '署名')}
-                {textEditBtn('date', '日期')}
+                {textEditBtn('color', '配色')}
                 {textEditBtn('title', '标题')}
                 {textEditBtn('body', '正文')}
+                {textEditBtn('date', '日期')}
+                {textEditBtn('sig', '署名')}
                 {isMulti && textEditBtn('nick', '昵称')}
+                {resetBtn(false, resetUserSettings, '复位配色/标题/正文/日期/署名的设置', 'ml-auto')}
               </>,
             )}
             {/* 日期/署名显示开关：控制卡片预览与导出图，默认都显示，记入浏览器本地 */}
@@ -790,40 +1162,84 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                   ref={cardRef}
                   style={{ backgroundColor: t.bg, fontFamily: font, fontSize: style.fontSize, lineHeight: 1.8, padding }}
                 >
-                  {/* 顶部：装饰双引号（左）+ 标题（居中，与双引号同行；黑体、黑色，字号 = min(正文×1.6, 32)）。
+                  {/* 顶部：装饰双引号（左）+ 标题（居中，与双引号同行；黑体，字号/颜色在「修改标题」里单独设置，与正文解耦）。
                       标题用绝对定位居中，不挤动双引号；标题显示时容器保底行高，避免双引号关闭后正文贴顶。
-                      深色主题卡片底为深色，黑色标题不可见，故 dark 下用白；
+                      日期可放四个角：右上角与引号/标题同行（保底行高）；左上角占顶部一行，引号与标题整体下移。
                       字体：优先黑体（Windows SimHei），Mac/iOS/安卓无黑体时回退系统无衬线粗体效果 */}
                   {/* 标题区上方额外留白：随正文字号联动（默认 16px 正文约 8px） */}
                   <div
                     style={{
                       position: 'relative',
                       marginTop: Math.round(style.fontSize * 0.5),
-                      minHeight: style.showTitle && title.trim() ? style.fontSize * 2 : undefined,
+                      paddingTop: titleTopOffset || undefined,
+                      minHeight:
+                        Math.max(
+                          style.showTitle && title.trim() ? Math.round(style.titleSize * 1.4) + titleTopOffset : 0,
+                          dateTopRight ? Math.round(dateFontSize * 1.4) : 0,
+                          dateTopLeft ? Math.round(dateFontSize * 1.4) : 0,
+                        ) || undefined,
                     }}
                   >
-                    {style.showQuote && (
+                    {showTopQuote && (
                       <div style={{ fontFamily: 'Georgia, serif', fontSize: style.fontSize * 2, lineHeight: 1, color: t.quote }}>“</div>
                     )}
+                    {/* 标题：居中时绝对定位水平居中；左对齐时贴左显示，并改用与双引号同色的竖线 */}
                     {style.showTitle && title.trim() && (
                       <div
                         style={{
                           position: 'absolute',
-                          left: 0,
-                          right: 0,
-                          top: 0,
-                          textAlign: 'center',
+                          top: titleTopOffset,
+                          display: 'flex',
+                          alignItems: 'center',
+                          // 日期在右上角时收窄标题区，避免长标题与日期文字叠字
+                          ...(titleLeft
+                            ? { left: 0, right: dateTopRight ? '40%' : 0, justifyContent: 'flex-start' }
+                            : {
+                                left: 0,
+                                right: 0,
+                                justifyContent: 'center',
+                                maxWidth: dateTopRight ? '58%' : undefined,
+                                margin: '0 auto',
+                              }),
                           fontFamily: 'SimHei, "Heiti SC", "Microsoft YaHei", sans-serif',
                           fontWeight: 700,
-                          fontSize: Math.min(style.fontSize * 1.6, 32),
+                          fontSize: style.titleSize,
                           lineHeight: 1,
-                          color: theme === 'dark' ? '#f5f5f5' : '#000',
+                          color: titleColorHex,
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
-                          textOverflow: 'ellipsis',
                         }}
                       >
-                        {title.trim()}
+                        {titleLeft && style.showQuote && (
+                          <span
+                            style={{
+                              width: 4,
+                              height: Math.round(style.titleSize * 1.1),
+                              backgroundColor: t.quote,
+                              borderRadius: 2,
+                              marginRight: Math.max(6, Math.round(style.titleSize * 0.35)),
+                              flexShrink: 0,
+                            }}
+                          />
+                        )}
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{title.trim()}</span>
+                      </div>
+                    )}
+                    {style.showDate && (dateTopLeft || dateTopRight) && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: dateTopLeft ? 0 : undefined,
+                          right: dateTopRight ? 0 : undefined,
+                          top: 0,
+                          color: dateColorHex,
+                          fontSize: dateFontSize,
+                          fontFamily: BASE_FONT,
+                          lineHeight: 1.4,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {dateLabel}
                       </div>
                     )}
                   </div>
@@ -855,7 +1271,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                               className="whitespace-pre-wrap break-all"
                               style={
                                 {
-                                  color: t.text,
+                                  color: style.bodyColor ?? t.text,
                                   fontWeight: style.bold ? 700 : 400,
                                   textAlign: 'left',
                                   textIndent: 0,
@@ -875,7 +1291,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                       className="whitespace-pre-wrap break-all"
                       style={
                         {
-                          color: t.text,
+                          color: style.bodyColor ?? t.text,
                           marginTop: 10,
                           fontWeight: style.bold ? 700 : 400,
                           // 小屏左对齐修复：WebKit 默认对行首全角标点做标点压缩（-webkit-punctuation-trim: start），
@@ -891,33 +1307,18 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                       {contentOf(messages[0])}
                     </p>
                   )}
-                  {(style.showDate || style.showSignature) && (
+                  {(dateBottomLeft || dateBottomRight || style.showSignature) && (
                     <div
                       className="flex items-center justify-between"
                       style={{ borderTop: `1px solid ${t.line}`, marginTop: 20, paddingTop: 12, fontFamily: BASE_FONT }}
                     >
-                      {/* 底部：日期居左、签名居右，无水印无连接符；右下角主题色小方块与左上角引号形成视觉呼应 */}
-                      <span style={{ color: t.aux, fontSize: auxSize, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                        {style.showDate ? dateLabel : ''}
+                      {/* 底部：日期左下角 + 署名右下角（默认）；日期在右下角时改为署名左、日期右。
+                          日期在上方两个角时，底部不显示日期，只保留署名 */}
+                      <span className="flex items-baseline" style={{ flexShrink: 0 }}>
+                        {dateBottomRight ? signatureNode : dateBottomLeft ? dateNode : ''}
                       </span>
-                      {/* 签名+小方块 baseline 对齐：空 inline-block 的 baseline 即其底边，方块底正好落在文字基线上（中文字形底≈基线），任何字号下视觉都是"与文字底对齐" */}
-                      <span className="flex items-baseline" style={{ color: t.aux, fontSize: auxSize, textAlign: 'right' }}>
-                        {style.showSignature && (
-                          <>
-                            {signature}
-                            <span
-                              style={{
-                                width: 8,
-                                height: 8,
-                                backgroundColor: t.quote,
-                                borderRadius: 2,
-                                display: 'inline-block',
-                                marginLeft: 6,
-                                flexShrink: 0,
-                              }}
-                            />
-                          </>
-                        )}
+                      <span className="flex items-baseline">
+                        {dateBottomRight ? (style.showDate ? dateNode : '') : signatureNode}
                       </span>
                     </div>
                   )}
@@ -1018,6 +1419,27 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                     {clearBtn(signature, () => setSignature(''))}
                   </div>
 
+                  {/* 署名字号/颜色：可独立设置，未设置时跟随正文联动字号与主题辅助色 */}
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-10 flex-shrink-0 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>字号</span>
+                      <input
+                        type="range"
+                        min={AUX_MIN}
+                        max={AUX_MAX}
+                        value={sigFontSize}
+                        onChange={(e) => setStyle((s) => ({ ...s, sigSize: Number(e.target.value) }))}
+                        className="flex-1 min-w-[120px] accent-green-500"
+                      />
+                      <span className={`w-10 text-right text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{sigFontSize}px</span>
+                      {resetBtn(style.sigSize === undefined, () => setStyle((s) => ({ ...s, sigSize: undefined })), '恢复默认署名字号（跟随正文联动）')}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`w-10 flex-shrink-0 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>颜色</span>
+                      {swatchRow(style.sigColor, (c) => setOptionalColor('sigColor', c), true)}
+                    </div>
+                  </div>
+
                   {/* 常用签名（仅浏览器本地）：点击切换当前签名，× 删除；最多保存 6 个 */}
                   <div className="mt-3">
                     <div className="flex items-center justify-between mb-1.5">
@@ -1072,47 +1494,175 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                 </div>
               )}
 
-              {/* 日期：仅本次生效；改过可出现「还原」恢复消息默认日期 */}
+              {/* 日期：仅本次生效；改过可出现「还原」恢复消息默认日期；位置（左下角/右上角）记 localStorage */}
               {textEdit === 'date' && (
-                <div>
-                  {editLabelRow('卡片日期', dateOverride.trim() !== '', () => setDateOverride(''))}
-                  <input
-                    autoFocus
-                    type="text"
-                    value={dateOverride}
-                    onChange={(e) => setDateOverride(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') setTextEdit(null);
-                    }}
-                    maxLength={30}
-                    placeholder={`留空则使用消息日期（${defaultDateLabel}）`}
-                    className={editInputCls}
-                  />
+                <div className="space-y-3">
+                  <div>
+                    {editLabelRow('卡片日期', dateOverride.trim() !== '', () => setDateOverride(''))}
+                    <input
+                      autoFocus
+                      type="text"
+                      value={dateOverride}
+                      onChange={(e) => setDateOverride(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') setTextEdit(null);
+                      }}
+                      maxLength={30}
+                      placeholder={`留空则使用消息日期（${defaultDateLabel}）`}
+                      className={editInputCls}
+                    />
+                  </div>
+                  <div>
+                    <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>日期显示位置</span>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                      {(
+                        [
+                          ['bottom-left', '左下角'],
+                          ['bottom-right', '右下角'],
+                          ['top-left', '左上角'],
+                          ['top-right', '右上角'],
+                        ] as const
+                      ).map(([key, label]) =>
+                        toggleBtn(style.datePos === key, () => setStyle((s) => ({ ...s, datePos: key })), label),
+                      )}
+                    </div>
+                  </div>
+                  {/* 日期字号/颜色：可独立设置，未设置时跟随正文联动字号与主题辅助色 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-10 flex-shrink-0 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>字号</span>
+                      <input
+                        type="range"
+                        min={AUX_MIN}
+                        max={AUX_MAX}
+                        value={dateFontSize}
+                        onChange={(e) => setStyle((s) => ({ ...s, dateSize: Number(e.target.value) }))}
+                        className="flex-1 min-w-[120px] accent-green-500"
+                      />
+                      <span className={`w-10 text-right text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{dateFontSize}px</span>
+                      {resetBtn(style.dateSize === undefined, () => setStyle((s) => ({ ...s, dateSize: undefined })), '恢复默认日期字号（跟随正文联动）')}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`w-10 flex-shrink-0 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>颜色</span>
+                      {swatchRow(style.dateColor, (c) => setOptionalColor('dateColor', c), true)}
+                    </div>
+                  </div>
                 </div>
               )}
 
               {/* 标题：记 localStorage，20 字以内，留空不显示标题；有文字时右侧出现清空按钮 */}
               {textEdit === 'title' && (
-                <div className="relative">
-                  <input
-                    autoFocus
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') setTextEdit(null);
-                    }}
-                    maxLength={20}
-                    placeholder="留空则不显示标题"
-                    className={`${editInputCls} pr-8`}
-                  />
-                  {clearBtn(title, () => setTitle(''))}
+                <div>
+                  <div className="relative">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') setTextEdit(null);
+                      }}
+                      maxLength={20}
+                      placeholder="留空则不显示标题"
+                      className={`${editInputCls} pr-8`}
+                    />
+                    {clearBtn(title, () => setTitle(''))}
+                  </div>
+
+                  {/* 标题字号/颜色：独立于正文，单独设置并记入浏览器本地 */}
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-10 flex-shrink-0 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>字号</span>
+                      <input
+                        type="range"
+                        min={TITLE_MIN}
+                        max={TITLE_MAX}
+                        value={style.titleSize}
+                        onChange={(e) => setStyle((s) => ({ ...s, titleSize: Number(e.target.value) }))}
+                        className="flex-1 min-w-[120px] accent-green-500"
+                      />
+                      <span className={`w-10 text-right text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{style.titleSize}px</span>
+                      {resetBtn(style.titleSize === 26, () => setStyle((s) => ({ ...s, titleSize: 26 })), '恢复默认标题字号 26px')}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`w-10 flex-shrink-0 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>对齐</span>
+                      {toggleBtn(style.titleAlign === 'center', () => setStyle((s) => ({ ...s, titleAlign: 'center' })), '居中对齐')}
+                      {toggleBtn(style.titleAlign === 'left', () => setStyle((s) => ({ ...s, titleAlign: 'left' })), '左对齐')}
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`w-10 flex-shrink-0 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>颜色</span>
+                      {swatchRow(style.titleColor, (c) => setStyle((s) => ({ ...s, titleColor: c })), true)}
+                    </div>
+                  </div>
+
+                  {/* 常用标题（仅浏览器本地）：点击切换当前标题，× 删除；最多保存 6 个 */}
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                        常用标题（{titles.length}/{MAX_TITLES}）
+                      </span>
+                      <button
+                        onClick={addTitle}
+                        disabled={!canSaveTitle}
+                        className={`flex items-center gap-0.5 text-sm disabled:opacity-40 ${
+                          isDarkMode ? 'text-green-400 hover:text-green-300' : 'text-green-600 hover:text-green-700'
+                        }`}
+                      >
+                        保存当前
+                      </button>
+                    </div>
+                    {titles.length === 0 ? (
+                      <p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                        还没有常用标题，输入后点「保存当前」即可加入
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {titles.map((n) => (
+                          <span
+                            key={n}
+                            className={`flex items-center gap-1 pl-2 pr-1 py-1 rounded-full text-sm border ${
+                              title === n
+                                ? 'border-green-500 text-green-600'
+                                : isDarkMode
+                                  ? 'border-gray-600 bg-gray-700 text-gray-200'
+                                  : 'border-gray-200 bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            <button onClick={() => setTitle(n)} className="max-w-[160px] truncate" title={`切换为：${n}`}>
+                              {n}
+                            </button>
+                            <button
+                              onClick={() => removeTitle(n)}
+                              title="删除该标题"
+                              className={`p-0.5 rounded-full ${isDarkMode ? 'text-gray-400 hover:text-red-400' : 'text-gray-400 hover:text-red-600'}`}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <p className={`mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                      点击标题可切换当前卡片标题；标题仅保存在本浏览器
+                    </p>
+                  </div>
                 </div>
               )}
 
               {/* 正文：单消息一个输入框；多消息按消息逐个改（图片/文件消息没有可改文字，不列出） */}
-              {textEdit === 'body' &&
-                (isMulti ? (
+              {textEdit === 'body' && (
+                <div>
+                  {/* 正文颜色：默认跟随主题，也可单独指定 */}
+                  <div className="mb-3">
+                    <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>正文颜色</span>
+                    <div className="mt-1.5">
+                      {swatchRow(style.bodyColor, (c) => setOptionalColor('bodyColor', c), true)}
+                    </div>
+                    <p className={`mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                      「默认」= 跟随当前卡片主题的正文颜色
+                    </p>
+                  </div>
+                  {isMulti ? (
                   textMsgs.length > 0 ? (
                     <div className="space-y-3">
                       {textMsgs.map((m) => (
@@ -1164,7 +1714,9 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                       </div>
                     </div>
                   </div>
-                ))}
+                )}
+                </div>
+              )}
 
               {/* 昵称（仅多消息卡片有此入口）：按去重后的原昵称逐个改显示名，留空则卡片上不显示该昵称 */}
               {textEdit === 'nick' && (
@@ -1192,6 +1744,43 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                       />
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* 配色：只改背景色/强调色，文字颜色仍在各自入口设置 */}
+              {textEdit === 'color' && (
+                <div className="space-y-3">
+                  <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    只调整背景与强调色；标题/正文/日期/署名文字颜色请到「修改」里分别设置。
+                  </p>
+                  <div>
+                    <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>背景色</span>
+                    <div className="mt-1.5">
+                      {swatchRow(
+                        colorEditBg,
+                        setColorEditBg,
+                        true,
+                        theme === 'custom' ? THEMES.custom.bg : THEMES[theme].bg,
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>强调色</span>
+                    <div className="mt-1.5">
+                      {swatchRow(
+                        colorEditAccent,
+                        setColorEditAccent,
+                        true,
+                        theme === 'custom' ? THEMES.custom.quote : THEMES[theme].quote,
+                      )}
+                    </div>
+                    <p className={`mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                      用于顶部双引号、左对齐竖线、署名小方块与图片边框。
+                    </p>
+                  </div>
+                  <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    背景改深/改浅后，记得检查文字颜色是否仍清晰。
+                  </p>
                 </div>
               )}
             </div>
