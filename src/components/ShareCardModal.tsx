@@ -698,8 +698,8 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
 
   // 设置行：左侧标签 + 右侧控件可换行，控件间留间距
   const settingRow = (label: string, children: React.ReactNode, dense = false) => (
-    <div className={`flex items-center flex-wrap ${dense ? 'gap-x-1 gap-y-1' : 'gap-x-1.5 gap-y-1.5'}`}>
-      <span className={`w-10 flex-shrink-0 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+    <div className={`flex items-center flex-wrap ${dense ? 'gap-x-1.5 gap-y-1' : 'gap-x-1.5 gap-y-1.5'}`}>
+      <span className={`w-8 sm:w-10 flex-shrink-0 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
         {label}
       </span>
       {children}
