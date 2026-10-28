@@ -451,7 +451,7 @@ export const InputBox = ({
               </button>
               {showEmoji && (
                 <div
-                  className={`absolute bottom-full left-0 mb-2 p-2 rounded-xl shadow-lg border grid grid-cols-10 gap-1 z-30 ${
+                  className={`absolute bottom-full left-0 mb-2 p-2 rounded-xl shadow-lg border grid grid-cols-8 gap-1 w-[280px] z-30 ${
                     isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'
                   }`}
                 >
@@ -613,7 +613,7 @@ export const InputBox = ({
                 ? '观察者仅可查看，不能发送消息'
                 : isMobile
                   ? ''
-                  : '输入消息，Enter 换行，Ctrl+Enter 发送，@ 提醒成员'
+                  : 'Enter 换行，Ctrl+Enter 发送，@ 提醒成员'
             }
             rows={1}
             className={`w-full px-3 py-2 rounded-2xl outline-none resize-none overflow-y-auto disabled:cursor-not-allowed ${

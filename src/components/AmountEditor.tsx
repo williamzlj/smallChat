@@ -15,6 +15,28 @@ const QUICK_DAYS = [
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
+// 最近用过的分类：仅存浏览器本地（按群隔离），用于给分类提供快捷按钮
+const RECENT_CATS_KEY = (groupId: number) => `smallchat-recent-cats-${groupId}`;
+
+function loadRecentCats(groupId: number): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_CATS_KEY(groupId));
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string').slice(0, 10) : [];
+  } catch {
+    return [];
+  }
+}
+
+// 从消息文本里识别金额：常见写法「19.2元」「19块」「￥19.2元」等
+const AMOUNT_RE = /(?:¥|￥)?\s*(\d{1,9}(?:\.\d{1,2})?)\s*(?:元|块|圆)/;
+const detectAmount = (text: string): string | null => {
+  const m = AMOUNT_RE.exec(text);
+  if (!m) return null;
+  const n = parseFloat(m[1]);
+  return Number.isFinite(n) && n > 0 ? String(n) : null;
+};
+
 function dayOffset(offset: number): string {
   const d = new Date();
   d.setDate(d.getDate() - offset);
@@ -72,10 +94,19 @@ export const AmountEditor = ({
   const [catsLoading, setCatsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [calOpen, setCalOpen] = useState(false); // 自绘日历展开状态
+  // 最近用过的分类（浏览器本地，按群隔离）；只展示与当前收支侧匹配的前三个
+  const [recentCats, setRecentCats] = useState<string[]>(() => loadRecentCats(message.group_id));
 
   const hasAmount = message.amount_kind > 0 && message.amount_cents !== null && message.amount_cents !== 0;
   const opt = TYPE_OPTS.find((o) => o.type === type) ?? TYPE_OPTS[0];
   const sideCats = useMemo(() => cats.filter((c) => c.kind === opt.kind), [cats, opt.kind]);
+  // 分类快捷按钮：最近用过且属于当前收支侧的分类，最多三个
+  const quickCats = useMemo(
+    () => recentCats.filter((n) => sideCats.some((c) => c.name === n)).slice(0, 3),
+    [recentCats, sideCats],
+  );
+  // 金额自动识别（仅做提示，不自动写入，避免覆盖用户输入）
+  const detectedAmount = useMemo(() => detectAmount(message.content ?? ''), [message.content]);
 
   const loadCats = async () => {
     setCatsLoading(true);
@@ -135,6 +166,16 @@ export const AmountEditor = ({
     try {
       const cat = category.trim();
       await api.messagesSetAmount(message.id, opt.kind, cents, cat, amountDate);
+      // 记录最近使用的分类（浏览器本地）：置顶去重，存 10 条，展示时按收支侧取前三个
+      if (cat) {
+        const next = [cat, ...recentCats.filter((n) => n !== cat)].slice(0, 10);
+        setRecentCats(next);
+        try {
+          localStorage.setItem(RECENT_CATS_KEY(message.group_id), JSON.stringify(next));
+        } catch {
+          // 本地存储不可用时忽略
+        }
+      }
       onSaved(opt.kind, cents, cat, amountDate);
     } catch (e) {
       alert(e instanceof Error ? e.message : '记账失败');
@@ -196,7 +237,22 @@ export const AmountEditor = ({
 
           {/* 金额 */}
           <div>
-            <span className={labelCls}>金额（元）</span>
+            <div className="flex items-center justify-between gap-2">
+              <span className={labelCls}>金额（元）</span>
+              {/* 自动识别到金额时的灰色小提示：与标签同一行、右对齐，点击才填入，不覆盖用户输入 */}
+              {detectedAmount && amountText.trim() === '' && (
+                <button
+                  type="button"
+                  onClick={() => setAmountText(detectedAmount)}
+                  className={`truncate text-xs text-right hover:underline ${
+                    isDarkMode ? 'text-gray-400 hover:text-green-400' : 'text-gray-400 hover:text-green-600'
+                  }`}
+                  title="点击填入自动识别的金额"
+                >
+                  自动识别到金额 {detectedAmount} 元，点击填入
+                </button>
+              )}
+            </div>
             <div className={`flex items-center rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}>
               <span className={`pl-3 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>¥</span>
               <input
@@ -262,8 +318,28 @@ export const AmountEditor = ({
 
           {/* 分类 */}
           <div>
-            <div className="flex items-center justify-between">
-              <span className={labelCls}>分类（可留空）</span>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className={labelCls}>分类（可留空）</span>
+                {/* 最近用过的分类快捷按钮（浏览器本地记录），点击直接选中 */}
+                {quickCats.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setCategory(n)}
+                    title="最近使用"
+                    className={`px-2 py-0.5 text-sm rounded-full border transition-colors ${
+                      category === n
+                        ? 'border-green-500 text-green-600'
+                        : isDarkMode
+                          ? 'border-gray-600 text-gray-300 hover:bg-gray-600'
+                          : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
               <button
                 onClick={() => void addCategory()}
                 className={`flex items-center gap-0.5 text-sm ${isDarkMode ? 'text-green-400 hover:text-green-300' : 'text-green-600 hover:text-green-700'}`}

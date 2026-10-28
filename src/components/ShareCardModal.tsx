@@ -235,6 +235,8 @@ const FONT_MAX = 24;
 
 // 外观设置持久化在浏览器本地（跨会话记忆，仅本设备生效）
 const STYLE_KEY = 'smallchat-card-style';
+// 常用签名最多保存个数
+const MAX_SIGNATURES = 6;
 const loadStyle = (): {
   theme: CardTheme;
   fontSize: number;
@@ -247,6 +249,7 @@ const loadStyle = (): {
   showQuote: boolean; // 卡片是否显示顶部装饰双引号
   showTitle: boolean; // 卡片是否显示顶部标题
   signature?: string;
+  signatures?: string[]; // 常用签名列表（最多 MAX_SIGNATURES 个）
   title?: string; // 卡片标题（顶部居中，与双引号同行同字号同色）
 } => {
   try {
@@ -261,6 +264,10 @@ const loadStyle = (): {
         // signature/title 缺省（老数据没有这个字段）时返回 undefined，由调用方决定是否迁移/按空处理
         const signature = typeof s.signature === 'string' ? s.signature : undefined;
         const title = typeof s.title === 'string' ? s.title : undefined;
+        // 常用签名列表：老数据没有该字段时返回 undefined（由调用方用当前签名做迁移）
+        const signatures = Array.isArray(s.signatures)
+          ? s.signatures.filter((x: unknown): x is string => typeof x === 'string').slice(0, MAX_SIGNATURES)
+          : undefined;
         // showDate/showSignature/showNickname/showQuote/showTitle 缺省（老数据没有这个字段）时默认显示
         return {
           theme,
@@ -274,6 +281,7 @@ const loadStyle = (): {
           showQuote: s.showQuote !== false,
           showTitle: s.showTitle !== false,
           signature,
+          signatures,
           title,
         };
       }
@@ -339,11 +347,19 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
   const [style, setStyle] = useState(() => {
     const s = loadStyle();
     delete s.signature; // 签名单独管，不混在样式选项里
+    delete s.signatures; // 常用签名列表单独管
     delete s.title; // 标题单独管，不混在样式选项里
     return s;
   });
   // 卡片签名仅存浏览器：本地没有时以服务器值（cardSignature prop）为初始值做一次性迁移，老用户无感；留空则卡片不显示署名
   const [signature, setSignature] = useState<string>(() => loadStyle().signature ?? cardSignature);
+  // 常用签名列表（仅存浏览器本地，最多 MAX_SIGNATURES 个）：老数据用当前签名/服务器签名做一次性迁移
+  const [signatures, setSignatures] = useState<string[]>(() => {
+    const s = loadStyle();
+    if (s.signatures && s.signatures.length > 0) return s.signatures.slice(0, MAX_SIGNATURES);
+    const seed = (s.signature ?? cardSignature ?? '').trim();
+    return seed ? [seed] : [];
+  });
   // 卡片标题仅存浏览器（与署名同模式），顶部居中显示；留空则不显示
   const [title, setTitle] = useState<string>(() => loadStyle().title ?? '');
   // 「修改文本」独立小弹窗：当前打开哪一个（null=都不开）
@@ -452,11 +468,11 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
   // 外观设置（含卡片样式主题、签名、标题）写入浏览器本地
   useEffect(() => {
     try {
-      localStorage.setItem(STYLE_KEY, JSON.stringify({ ...style, theme, signature, title }));
+      localStorage.setItem(STYLE_KEY, JSON.stringify({ ...style, theme, signature, signatures, title }));
     } catch {
       // 存储不可用时忽略（无痕模式等）
     }
-  }, [style, theme, signature, title]);
+  }, [style, theme, signature, signatures, title]);
 
   // 外观/文本变化后，之前生成的图片作废
   useEffect(() => setImgUrl(''), [theme, style, signature, title, dateOverride, contentEdits, nickEdits]);
@@ -660,6 +676,15 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
       else next[orig] = value;
       return next;
     });
+
+  // 常用签名：保存当前签名进列表（最多 MAX_SIGNATURES 个）；点列表项切换；× 删除
+  const currentSig = signature.trim();
+  const canSaveSig = currentSig !== '' && !signatures.includes(currentSig) && signatures.length < MAX_SIGNATURES;
+  const addSignature = () => {
+    if (!canSaveSig) return;
+    setSignatures((prev) => [...prev, currentSig]);
+  };
+  const removeSignature = (name: string) => setSignatures((prev) => prev.filter((n) => n !== name));
 
   return (
     <>
@@ -976,20 +1001,74 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
             <div className="p-4 overflow-y-auto">
               {/* 署名：记 localStorage，20 字以内，留空不显示署名；有文字时右侧出现清空按钮 */}
               {textEdit === 'sig' && (
-                <div className="relative">
-                  <input
-                    autoFocus
-                    type="text"
-                    value={signature}
-                    onChange={(e) => setSignature(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') setTextEdit(null);
-                    }}
-                    maxLength={20}
-                    placeholder="留空则不显示署名"
-                    className={`${editInputCls} pr-8`}
-                  />
-                  {clearBtn(signature, () => setSignature(''))}
+                <div>
+                  <div className="relative">
+                    <input
+                      autoFocus
+                      type="text"
+                      value={signature}
+                      onChange={(e) => setSignature(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') setTextEdit(null);
+                      }}
+                      maxLength={20}
+                      placeholder="留空则不显示署名"
+                      className={`${editInputCls} pr-8`}
+                    />
+                    {clearBtn(signature, () => setSignature(''))}
+                  </div>
+
+                  {/* 常用签名（仅浏览器本地）：点击切换当前签名，× 删除；最多保存 6 个 */}
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                        常用签名（{signatures.length}/{MAX_SIGNATURES}）
+                      </span>
+                      <button
+                        onClick={addSignature}
+                        disabled={!canSaveSig}
+                        className={`flex items-center gap-0.5 text-sm disabled:opacity-40 ${
+                          isDarkMode ? 'text-green-400 hover:text-green-300' : 'text-green-600 hover:text-green-700'
+                        }`}
+                      >
+                        保存当前
+                      </button>
+                    </div>
+                    {signatures.length === 0 ? (
+                      <p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                        还没有常用签名，输入后点「保存当前」即可加入
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {signatures.map((n) => (
+                          <span
+                            key={n}
+                            className={`flex items-center gap-1 pl-2 pr-1 py-1 rounded-full text-sm border ${
+                              signature === n
+                                ? 'border-green-500 text-green-600'
+                                : isDarkMode
+                                  ? 'border-gray-600 bg-gray-700 text-gray-200'
+                                  : 'border-gray-200 bg-gray-100 text-gray-700'
+                            }`}
+                          >
+                            <button onClick={() => setSignature(n)} className="max-w-[160px] truncate" title={`切换为：${n}`}>
+                              {n}
+                            </button>
+                            <button
+                              onClick={() => removeSignature(n)}
+                              title="删除该签名"
+                              className={`p-0.5 rounded-full ${isDarkMode ? 'text-gray-400 hover:text-red-400' : 'text-gray-400 hover:text-red-600'}`}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <p className={`mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                      点击签名可切换当前卡片署名；签名仅保存在本浏览器
+                    </p>
+                  </div>
                 </div>
               )}
 
