@@ -697,8 +697,8 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
   );
 
   // 设置行：左侧标签 + 右侧控件可换行，控件间留间距
-  const settingRow = (label: string, children: React.ReactNode) => (
-    <div className="flex items-center flex-wrap gap-x-1.5 gap-y-1.5">
+  const settingRow = (label: string, children: React.ReactNode, dense = false) => (
+    <div className={`flex items-center flex-wrap ${dense ? 'gap-x-1 gap-y-1' : 'gap-x-1.5 gap-y-1.5'}`}>
       <span className={`w-10 flex-shrink-0 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
         {label}
       </span>
@@ -730,7 +730,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
       disabled={isDefault}
       title={label}
       aria-label={label}
-      className={`${extraCls} w-7 h-7 flex-shrink-0 flex items-center justify-center rounded-lg ${
+      className={`${extraCls} w-6 h-6 sm:w-7 sm:h-7 flex-shrink-0 flex items-center justify-center rounded-lg ${
         isDefault
           ? isDarkMode
             ? 'text-gray-600 cursor-default'
@@ -740,7 +740,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
             : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
       }`}
     >
-      <RotateCcw className="w-4 h-4" />
+      <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
     </button>
   );
 
@@ -816,7 +816,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
     <button
       key={target}
       onClick={() => setTextEdit(target)}
-      className={`px-2 py-0.5 text-sm rounded-lg transition-colors ${
+      className={`px-1.5 sm:px-2 py-0.5 text-sm rounded-lg transition-colors ${
         isDarkMode
           ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
           : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -1139,6 +1139,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                 {isMulti && textEditBtn('nick', '昵称')}
                 {resetBtn(false, resetUserSettings, '复位配色/标题/正文/日期/署名的设置', 'ml-auto')}
               </>,
+              true,
             )}
             {/* 日期/署名显示开关：控制卡片预览与导出图，默认都显示，记入浏览器本地 */}
             {settingRow(
