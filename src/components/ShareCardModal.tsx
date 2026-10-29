@@ -2,7 +2,7 @@
 // 字号/字体/边距/卡片签名/日期署名开关仅记在浏览器 localStorage，不进后端数据库
 import { useEffect, useRef, useState } from 'react';
 import { toPng } from 'html-to-image';
-import { X, ImageDown, Share2, Loader2, Bold, Copy, Check, Pipette, RotateCcw } from 'lucide-react';
+import { X, ImageDown, Share2, Loader2, Bold, Copy, Check, Pipette, RotateCcw, Download } from 'lucide-react';
 import { ChatMessage } from '../api/types';
 import { API_BASE } from '../config';
 import { tokenStore } from '../api/client';
@@ -523,7 +523,12 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
   // 跨天的多消息卡片显示日期区间；「修改文本」里改过日期则以覆写为准
   const defaultDateLabel = date === lastDate ? date : `${date} ~ ${lastDate}`;
   const dateLabel = dateOverride.trim() || defaultDateLabel;
-  const fileName = `smallChat-card-${date.replace(/-/g, '')}.png`;
+  // 文件名带输出时间（生成那一刻的时分），如 smallChat-card-20261028_1723.png；每次生成都取当下时间
+  const makeFileName = () => {
+    const t = new Date();
+    const hhmm = `${String(t.getHours()).padStart(2, '0')}${String(t.getMinutes()).padStart(2, '0')}`;
+    return `smallChat-card-${date.replace(/-/g, '')}_${hhmm}.png`;
+  };
   // 卡片正文以「修改文本」里的覆写为准（未改的消息用原文）
   const contentOf = (m: ChatMessage) => contentEdits[m.id] ?? m.content;
   // 昵称以「修改昵称」里的覆写为准（未改的用原昵称）；仅多消息卡片用
@@ -618,7 +623,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
       } else {
         const a = document.createElement('a');
         a.href = url;
-        a.download = fileName;
+        a.download = makeFileName();
         a.click();
       }
     } catch {
@@ -671,13 +676,36 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
     if (!imgUrl) return;
     try {
       const blob = await (await fetch(imgUrl)).blob();
-      const file = new File([blob], fileName, { type: 'image/png' });
+      const file = new File([blob], makeFileName(), { type: 'image/png' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file] });
       }
     } catch {
       // 用户取消或设备不支持，忽略
     }
+  };
+
+  // 手机端「保存图片」：优先 Web Share Level 2（iOS/Android 系统面板里有「存储图像/保存到相册」），
+  // 不支持时退回 a[download]（Android Chrome 可直接下载）；iOS 老浏览器两条路都不通，仍可长按图片保存
+  const saveImage = async () => {
+    if (!imgUrl) return;
+    const name = makeFileName();
+    if (typeof navigator.canShare === 'function') {
+      try {
+        const blob = await (await fetch(imgUrl)).blob();
+        const file = new File([blob], name, { type: 'image/png' });
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file] });
+          return;
+        }
+      } catch {
+        return; // 用户取消了系统面板，不再降级
+      }
+    }
+    const a = document.createElement('a');
+    a.href = imgUrl;
+    a.download = name;
+    a.click();
   };
 
   // 通用小选项按钮（样式/字体/边距共用）
@@ -1335,7 +1363,18 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
             </div>
           </div>
 
-          {imgUrl && <p className="text-center text-sm text-gray-400">长按图片保存到相册</p>}
+          {imgUrl && (
+            <div className="flex flex-col items-center gap-1.5">
+              <button
+                onClick={() => void saveImage()}
+                className="flex items-center justify-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-medium bg-green-500 text-white hover:bg-green-600 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                <span>保存图片</span>
+              </button>
+              <p className="text-xs text-gray-400">如未能保存，可长按图片存到相册</p>
+            </div>
+          )}
           {error && <p className="text-sm text-red-500 text-center">{error}</p>}
 
           <div className="flex space-x-3">
