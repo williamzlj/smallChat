@@ -1,6 +1,6 @@
 // 「生成分享卡片」弹窗：把一条或多条消息（文字/图片混排）渲染成高清 PNG，方便发朋友圈/抖音
 // 字号/字体/边距/卡片签名/日期署名开关仅记在浏览器 localStorage，不进后端数据库
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { toPng } from 'html-to-image';
 import { X, ImageDown, Share2, Loader2, Bold, Copy, Check, Pipette, RotateCcw, Download } from 'lucide-react';
 import { ChatMessage } from '../api/types';
@@ -10,6 +10,7 @@ import { tokenStore } from '../api/client';
 interface Props {
   messages: ChatMessage[]; // 单条卡片传长度 1 的数组；多条按时间正序
   cardSignature: string; // 服务器上的卡片签名：仅作首次迁移的初始值（本地无签名时采用），此后以 localStorage 为准
+  groupName: string; // 当前群名（私聊为对方昵称）：供「插入群名」按钮拼成「群名称」
   isDarkMode: boolean;
   onClose: () => void;
 }
@@ -433,7 +434,7 @@ const AutoTextarea = ({
   );
 };
 
-export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }: Props) => {
+export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode, onClose }: Props) => {
   const [theme, setTheme] = useState<CardTheme>(() => loadStyle().theme);
   const [style, setStyle] = useState(() => {
     const s = loadStyle();
@@ -892,12 +893,13 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
   );
 
   // 颜色选择行（标题/正文/背景/强调色共用）：可选「默认」，预设色圆点，末尾矩形取色器
-  // defaultColor 仅用于取色器按钮上的当前色预览（如背景色的主题默认值）
+  // defaultColor 仅用于取色器按钮上的当前色预览（如背景色的主题默认值）；trailing 用于在取色器右侧追加自定义按钮
   const swatchRow = (
     current: string | undefined,
     onChange: (color?: string) => void,
     withDefault: boolean,
     defaultColor?: string,
+    trailing?: ReactNode,
   ) => {
     const isPreset = !!current && CARD_COLORS.some((c) => c.toLowerCase() === current.toLowerCase());
     return (
@@ -960,6 +962,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
             className="w-0 h-0 opacity-0"
           />
         </label>
+        {trailing}
       </div>
     );
   };
@@ -1452,7 +1455,7 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') setTextEdit(null);
                       }}
-                      maxLength={20}
+                      maxLength={40}
                       placeholder="留空则不显示署名"
                       className={`${editInputCls} pr-8`}
                     />
@@ -1476,7 +1479,24 @@ export const ShareCardModal = ({ messages, cardSignature, isDarkMode, onClose }:
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className={`w-10 flex-shrink-0 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>颜色</span>
-                      {swatchRow(style.sigColor, (c) => setOptionalColor('sigColor', c), true)}
+                      {swatchRow(
+                        style.sigColor,
+                        (c) => setOptionalColor('sigColor', c),
+                        true,
+                        undefined,
+                        // 取色器右侧空间不多，插一个「插入群名」按钮：拼成「群名称」追加到文本框末尾
+                        <button
+                          disabled={!groupName}
+                          onClick={() => setSignature((prev) => `${prev}「${groupName}」`.slice(0, 40))}
+                          className={`ml-1 h-7 px-2 rounded-md border text-sm whitespace-nowrap disabled:opacity-40 ${
+                            isDarkMode
+                              ? 'border-gray-500 text-gray-300 hover:bg-gray-700'
+                              : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          插入群名
+                        </button>,
+                      )}
                     </div>
                   </div>
 

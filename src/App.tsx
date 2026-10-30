@@ -1322,6 +1322,7 @@ export default function App() {
         <ShareCardModal
           messages={shareCardMsgs}
           cardSignature={user?.card_signature || ''}
+          groupName={groupTitle}
           isDarkMode={isDarkMode}
           onClose={() => setShareCardMsgs(null)}
         />
