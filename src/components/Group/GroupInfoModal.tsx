@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type ComponentType } from 'react';
-import { X, Crown, Shield, LogOut, Trash2, Pencil, Check, User, UserMinus, UserCog, Eye, Archive, ArchiveRestore, CopyPlus, Download, Loader2, Megaphone, FileText, Tag, Wallet } from 'lucide-react';
+import { X, Crown, Shield, LogOut, Trash2, Pencil, Check, User, UserMinus, UserCog, Eye, Archive, ArchiveRestore, CopyPlus, Download, Loader2, Megaphone, FileText, Tag, Wallet, Copy } from 'lucide-react';
 import { api } from '../../api/client';
 import { Group, GroupMember, GroupRole, Friend, ChatMessage } from '../../api/types';
 
@@ -52,7 +52,34 @@ export const GroupInfoModal = ({
   const [roleMenuFor, setRoleMenuFor] = useState<number | null>(null);
   const [roleMsg, setRoleMsg] = useState('');
   const [ledgerMsg, setLedgerMsg] = useState('');
+  const [nameCopied, setNameCopied] = useState(false); // 复制群名后的短暂反馈
   const roleMenuRef = useRef<HTMLDivElement>(null);
+
+  // 复制群名到剪贴板：优先 Clipboard API，失败退回 textarea + execCommand（老浏览器/非安全上下文）
+  const copyGroupName = async () => {
+    const done = () => {
+      setNameCopied(true);
+      setTimeout(() => setNameCopied(false), 1500);
+    };
+    try {
+      await navigator.clipboard.writeText(group.name);
+      done();
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = group.name;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        done();
+      } catch {
+        // 复制失败时不做提示，用户可手动选中文字
+      }
+      document.body.removeChild(ta);
+    }
+  };
 
   // 财务记账开关（按群开启，默认关闭）：只有群主/副群主可切换
   const toggleLedger = async () => {
@@ -352,7 +379,24 @@ export const GroupInfoModal = ({
           {/* 群名（私聊不可改） */}
           {!isDm && (
             <div>
-              <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>群名称</label>
+              <div className="flex items-center gap-1 mb-2">
+                <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>群名称</label>
+                <button
+                  onClick={() => void copyGroupName()}
+                  title={nameCopied ? '已复制' : '复制群名'}
+                  aria-label="复制群名"
+                  className={`flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md transition-colors ${
+                    nameCopied
+                      ? 'text-green-500'
+                      : isDarkMode
+                        ? 'text-gray-400 hover:bg-gray-700'
+                        : 'text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  {nameCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  {nameCopied && <span>已复制</span>}
+                </button>
+              </div>
               {editingName && isAdmin ? (
                 <div className="flex items-center space-x-2">
                   <input
