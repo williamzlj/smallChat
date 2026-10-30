@@ -1344,14 +1344,24 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
                       className="flex items-center justify-between"
                       style={{ borderTop: `1px solid ${t.line}`, marginTop: 20, paddingTop: 12, fontFamily: BASE_FONT }}
                     >
-                      {/* 底部：日期左下角 + 署名右下角（默认）；日期在右下角时改为署名左、日期右。
+                      {/* 底部两角：
+                          - 日期左下角（默认）/ 左上右下：日期在左、署名在右，同一行
+                          - 日期右下角：署名与日期改成上下两行右对齐（署名过长时一行放不下，日期单独一行更稳）
                           日期在上方两个角时，底部不显示日期，只保留署名 */}
-                      <span className="flex items-baseline" style={{ flexShrink: 0 }}>
-                        {dateBottomRight ? signatureNode : dateBottomLeft ? dateNode : ''}
-                      </span>
-                      <span className="flex items-baseline">
-                        {dateBottomRight ? (style.showDate ? dateNode : '') : signatureNode}
-                      </span>
+                      {dateBottomRight ? (
+                        <div className="ml-auto flex flex-col items-end" style={{ gap: 4 }}>
+                          {signatureNode}
+                          {/* 署名右侧有 8px 小色块 + 6px 间距，日期右移让出这段（再多留 6px 呼吸感），和署名文字右边缘对齐（无署名时不缩进） */}
+                          <span style={{ marginRight: style.showSignature ? 20 : 0 }}>{dateNode}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="flex items-baseline" style={{ flexShrink: 0 }}>
+                            {dateBottomLeft ? dateNode : ''}
+                          </span>
+                          <span className="flex items-baseline">{signatureNode}</span>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
