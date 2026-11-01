@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Wallet, X, Plus, Loader2, Trash2, Calendar } from 'lucide-react';
+import { Wallet, X, Plus, Loader2, Trash2, Calendar, RotateCcw } from 'lucide-react';
 import { api } from '../api/client';
 import { AmountType, Category, ChatMessage } from '../api/types';
 import { fmtMoney } from './MessageBubble';
@@ -28,13 +28,33 @@ function loadRecentCats(groupId: number): string[] {
   }
 }
 
-// 从消息文本里识别金额：常见写法「19.2元」「19块」「￥19.2元」等
-const AMOUNT_RE = /(?:¥|￥)?\s*(\d{1,9}(?:\.\d{1,2})?)\s*(?:元|块|圆)/;
-const detectAmount = (text: string): string | null => {
-  const m = AMOUNT_RE.exec(text);
-  if (!m) return null;
-  const n = parseFloat(m[1]);
-  return Number.isFinite(n) && n > 0 ? String(n) : null;
+// 从消息文本里识别金额，最多返回 3 个候选（按出现顺序，去重）。
+// 匹配优先级：① 特征明显的金额写法「19.2元」「19块」「￥19.2」「19圆」；② 都没有时再退化为裸数字（如「买了两杯咖啡 19.2」）。
+const AMOUNT_RE = /(?:¥|￥)?\s*(\d{1,9}(?:\.\d{1,2})?)\s*(?:元|块|圆)/g;
+const CURRENCY_RE = /(?:¥|￥)\s*(\d{1,9}(?:\.\d{1,2})?)/g;
+const NUMBER_RE = /\d{1,9}(?:\.\d{1,2})?/g;
+const detectAmounts = (text: string): string[] => {
+  const out: string[] = [];
+  const push = (raw: string) => {
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n <= 0) return;
+    const s = String(n);
+    if (!out.includes(s) && out.length < 3) out.push(s);
+  };
+  for (const re of [AMOUNT_RE, CURRENCY_RE]) {
+    for (const m of text.matchAll(re)) push(m[1]);
+    if (out.length > 0) return out;
+  }
+  // 裸数字兜底：跳过紧贴其他数字/小数点的片段（避免把长数字拆成多段）
+  for (const m of text.matchAll(NUMBER_RE)) {
+    const i = m.index ?? 0;
+    const before = text[i - 1] ?? '';
+    const after = text[i + m[0].length] ?? '';
+    if (/[\d.]/.test(before) || /[\d.]/.test(after)) continue;
+    push(m[0]);
+    if (out.length >= 3) break;
+  }
+  return out;
 };
 
 function dayOffset(offset: number): string {
@@ -98,6 +118,9 @@ export const AmountEditor = ({
   const [recentCats, setRecentCats] = useState<string[]>(() => loadRecentCats(message.group_id));
 
   const hasAmount = message.amount_kind > 0 && message.amount_cents !== null && message.amount_cents !== 0;
+  // 打开弹窗时的原始金额：已记过账=原记账金额；没记过账=0（「重置」按钮恢复用）
+  const originalAmount =
+    message.amount_cents !== null && message.amount_cents !== 0 ? (Math.abs(message.amount_cents) / 100).toString() : '0';
   const opt = TYPE_OPTS.find((o) => o.type === type) ?? TYPE_OPTS[0];
   const sideCats = useMemo(() => cats.filter((c) => c.kind === opt.kind), [cats, opt.kind]);
   // 分类快捷按钮：最近用过且属于当前收支侧的分类，最多三个
@@ -105,8 +128,8 @@ export const AmountEditor = ({
     () => recentCats.filter((n) => sideCats.some((c) => c.name === n)).slice(0, 3),
     [recentCats, sideCats],
   );
-  // 金额自动识别（仅做提示，不自动写入，避免覆盖用户输入）
-  const detectedAmount = useMemo(() => detectAmount(message.content ?? ''), [message.content]);
+  // 金额自动识别（仅做提示，不自动写入，避免覆盖用户输入）；多个候选时列出前 3 个供点选
+  const detectedAmounts = useMemo(() => detectAmounts(message.content ?? ''), [message.content]);
 
   const loadCats = async () => {
     setCatsLoading(true);
@@ -238,20 +261,41 @@ export const AmountEditor = ({
           {/* 金额 */}
           <div>
             <div className="flex items-center justify-between gap-2">
-              <span className={labelCls}>金额（元）</span>
-              {/* 自动识别到金额时的灰色小提示：与标签同一行、右对齐，点击才填入，不覆盖用户输入 */}
-              {detectedAmount && amountText.trim() === '' && (
+              <span className={`${labelCls} flex-shrink-0`}>金额（元）</span>
+              {/* 识别金额做成「今天/昨天」同款圆角按钮：常驻不消失，点错可重选；当前生效的候选高亮。
+                  重置：已记过账→恢复打开弹窗前的金额；未记过账→0 */}
+              <span className="flex flex-wrap items-center justify-end gap-1">
+                {detectedAmounts.map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    onClick={() => setAmountText(a)}
+                    title={`填入识别到的金额 ${a} 元`}
+                    className={`px-2 py-0.5 text-sm rounded-full border transition-colors ${
+                      amountText === a
+                        ? 'border-green-500 text-green-600'
+                        : isDarkMode
+                          ? 'border-gray-600 text-gray-300 hover:bg-gray-600'
+                          : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {a}元
+                  </button>
+                ))}
                 <button
                   type="button"
-                  onClick={() => setAmountText(detectedAmount)}
-                  className={`truncate text-xs text-right hover:underline ${
-                    isDarkMode ? 'text-gray-400 hover:text-green-400' : 'text-gray-400 hover:text-green-600'
+                  onClick={() => setAmountText(originalAmount)}
+                  title={hasAmount ? `恢复为修改前的金额 ${originalAmount} 元` : '尚未记过账，重置为 0'}
+                  className={`flex items-center gap-0.5 px-2 py-0.5 text-sm rounded-full border transition-colors ${
+                    isDarkMode
+                      ? 'border-gray-600 text-gray-300 hover:bg-gray-600'
+                      : 'border-gray-300 text-gray-600 hover:bg-gray-100'
                   }`}
-                  title="点击填入自动识别的金额"
                 >
-                  自动识别到金额 {detectedAmount} 元，点击填入
+                  <RotateCcw className="w-3 h-3" />
+                  重置
                 </button>
-              )}
+              </span>
             </div>
             <div className={`flex items-center rounded-lg border ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'border-gray-300'}`}>
               <span className={`pl-3 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>¥</span>
@@ -373,14 +417,18 @@ export const AmountEditor = ({
             <p className={`text-sm ${isDarkMode ? 'text-blue-300' : 'text-blue-600'}`}>已自动继承原消息的分类：{inheritHint}</p>
           )}
 
-          {/* 预览：一眼确认这笔账会怎么记 */}
-          {valid && (
-            <div className={`rounded-lg px-3 py-2 text-sm ${isDarkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700'}`}>
-              将记为 <span className="font-medium">{opt.label}</span> <span className="font-medium">¥{fmtMoney(cents)}</span>
-              {category.trim() && <> · {category.trim()}</>}
-              {opt.sign === -1 && <span className="opacity-80">（抵减，不计入{moneySideLabel(opt.kind)}）</span>}
-            </div>
-          )}
+          {/* 预览：常驻占位（未输入有效金额时显示灰字），避免输入/清空时弹窗高度跳动 */}
+          <div className={`rounded-lg px-3 py-2 text-sm ${isDarkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-100 text-gray-700'}`}>
+            {valid ? (
+              <>
+                将记为 <span className="font-medium">{opt.label}</span> <span className="font-medium">¥{fmtMoney(cents)}</span>
+                {category.trim() && <> · {category.trim()}</>}
+                {opt.sign === -1 && <span className="opacity-80">（抵减，不计入{moneySideLabel(opt.kind)}）</span>}
+              </>
+            ) : (
+              <span className={isDarkMode ? 'text-gray-500' : 'text-gray-400'}>将记为：输入金额后显示预览</span>
+            )}
+          </div>
 
           <div className="flex items-center justify-end gap-2 pt-1">
             {hasAmount && (

@@ -24,6 +24,7 @@ import { NoteModal } from './NoteModal';
 interface Props {
   isDarkMode: boolean;
   fontSize: number;
+  hintFontSize?: number; // 提示/辅助文字字号（独立于消息字号）
   currentUserId: number; // 当前用户 id（判定公共备注是否可编辑）
   onJump: (groupId: number, messageId: number) => void;
   onToggleSidebar: () => void;
@@ -53,7 +54,7 @@ const isTodoTab = (v: string | null): v is Tab =>
   v === 'pending' || v === 'done' || v === 'dueFuture' || v === 'duePast' || v === 'calendar';
 
 // 跨群待办面板：未完成 / 已完成，支持归档过滤、右键操作、多选合并复制
-export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggleSidebar, sidebarOpen, active, roleOf, onDelegate }: Props) => {
+export const TodoPanel = ({ isDarkMode, fontSize, hintFontSize, currentUserId, onJump, onToggleSidebar, sidebarOpen, active, roleOf, onDelegate }: Props) => {
   const [tab, setTab] = useState<Tab>(() => {
     const v = localStorage.getItem(TODO_VIEW_KEY);
     return isTodoTab(v) ? v : 'pending';
@@ -278,7 +279,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
     : filtered;
 
   // ---- 月历 / 按日期分组列表：只收录设了提醒的待办（含已完成，跟随归档开关） ----
-  const auxSize = Math.max(fontSize - 6, 14);
+  const auxSize = hintFontSize ?? Math.max(fontSize - 6, 14);
   const contentSize = Math.max(fontSize - 4, 14);
   const reminderMsgs = messages.filter(
     (m) => (showArchived || m.todo_archived === 0) && m.due_at && (showFarDue || m.due_at <= twoMonthsLater),
@@ -1022,6 +1023,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
               msg={m}
               isDarkMode={isDarkMode}
               fontSize={fontSize}
+              hintFontSize={hintFontSize}
               mode="todo"
               selected={selected.has(m.id)}
               selectMode={selectMode}
@@ -1087,6 +1089,7 @@ export const TodoPanel = ({ isDarkMode, fontSize, currentUserId, onJump, onToggl
           messageId={contextMsg.id}
           isDarkMode={isDarkMode}
           fontSize={fontSize}
+          hintFontSize={hintFontSize}
           onClose={() => setContextMsg(null)}
           onJump={(gid, mid) => {
             setContextMsg(null);

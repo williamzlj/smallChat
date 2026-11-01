@@ -8,6 +8,7 @@ interface Props {
   messageId: number;
   isDarkMode: boolean;
   fontSize: number;
+  hintFontSize?: number; // 提示/辅助文字字号（独立于消息字号）
   onClose: () => void;
   onJump?: (groupId: number, messageId: number) => void;
 }
@@ -20,7 +21,7 @@ const contentText = (m: ChatMessage): string => {
   return m.content;
 };
 
-export const ContextModal = ({ messageId, isDarkMode, fontSize, onClose, onJump }: Props) => {
+export const ContextModal = ({ messageId, isDarkMode, fontSize, hintFontSize, onClose, onJump }: Props) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [list, setList] = useState<ChatMessage[]>([]);
@@ -57,8 +58,8 @@ export const ContextModal = ({ messageId, isDarkMode, fontSize, onClose, onJump 
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // 字号规则与待办/重要面板一致（汇总查看，不需要聊天区那么大）
-  const auxSize = Math.max(fontSize - 6, 14);
+  // 辅助文字用独立「提示字号」；正文字号规则不变（汇总查看，不需要聊天区那么大）
+  const auxSize = hintFontSize ?? Math.max(fontSize - 6, 14);
   const contentSize = Math.max(fontSize - 4, 14);
   const bubbleMax = 420;
 

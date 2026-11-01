@@ -271,6 +271,7 @@ interface PanelItemProps {
   msg: CrossGroupMessage;
   isDarkMode: boolean;
   fontSize: number;
+  hintFontSize?: number; // 提示/辅助文字字号；不传则退回旧联动规则
   mode: 'todo' | 'important';
   selected: boolean;
   selectMode: boolean;
@@ -302,6 +303,7 @@ export const PanelItem = ({
   msg,
   isDarkMode,
   fontSize,
+  hintFontSize,
   mode,
   selected,
   selectMode,
@@ -321,8 +323,8 @@ export const PanelItem = ({
   const showDetail = !compact || expanded;
   // 当前模式下的归档状态：待办看 todo_archived，重要看 important_archived
   const archived = mode === 'todo' ? msg.todo_archived === 1 : msg.important_archived === 1;
-  // 辅助文字统一字号：跟随设置缩放，最小 14px（与消息气泡规则一致）
-  const auxSize = Math.max(fontSize - 6, 14);
+  // 辅助文字统一字号：用独立的「提示字号」（与消息气泡规则一致）
+  const auxSize = hintFontSize ?? Math.max(fontSize - 6, 14);
   // 正文比辅助文字大两档：max(设置-4, 14)，面板是汇总查看，无需与气泡正文一样大
   const contentSize = Math.max(fontSize - 4, 14);
   // 状态圆点直径：跟正文大小联动（与提醒月历的 0.75em 规则一致）

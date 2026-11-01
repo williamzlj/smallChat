@@ -44,6 +44,7 @@ interface Props {
   foldLen: number; // 长文本默认折叠的字数阈值（0=不折叠；本设备设置）
   isDarkMode: boolean;
   fontSize: number;
+  hintFontSize?: number; // 提示/辅助文字字号；不传则退回旧的联动规则 max(fontSize-6, 14)
   bubbleStyle?: 'green' | 'white'; // 我的气泡样式（默认 green 经典绿底；white 时自己的气泡与对方一致白底黑字）
 }
 
@@ -210,6 +211,7 @@ export const MessageBubble = ({
   foldLen,
   isDarkMode,
   fontSize,
+  hintFontSize,
   bubbleStyle = 'green',
 }: Props) => {
   const [showMenu, setShowMenu] = useState(false);
@@ -389,8 +391,8 @@ export const MessageBubble = ({
     isDarkMode ? 'text-gray-200 hover:bg-gray-600' : 'text-gray-700 hover:bg-gray-100'
   }`;
 
-  // 气泡内辅助文字（待办标记、备注、引用、时间等）统一字号：跟随设置缩放，最小 14px
-  const auxSize = Math.max(fontSize - 6, 14);
+  // 气泡内辅助文字（待办标记、备注、引用、时间等）：用独立的「提示字号」，不再随消息字号放大
+  const auxSize = hintFontSize ?? Math.max(fontSize - 6, 14);
   const smallStyle = { fontSize: `${auxSize}px` };
 
   // 配色是否走「绿底白字」：白底样式下自己的气泡配色与对方一致（布局仍在右侧，由 isSelf 决定）

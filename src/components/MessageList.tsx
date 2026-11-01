@@ -37,11 +37,12 @@ interface Props {
   onStartReply: (msg: ChatMessage) => void;
   onTogglePin: (msg: ChatMessage) => void;
   onShareCard: (msg: ChatMessage) => void; // 生成分享卡片（单条）
-  onShareCardMulti: (msgs: ChatMessage[]) => void; // 多选消息合成一张分享卡片（按时间正序）
+  onShareCardMulti: (msgs: ChatMessage[]) => void; // 多选消息合成一张分享卡片（按点选顺序）
   onForwardMessages: (msgs: ChatMessage[]) => void;
   onTodoNoteEdit?: (msg: ChatMessage) => void; // 添加/修改待办备注（打开待办备注弹窗）
   isDarkMode: boolean;
   fontSize: number;
+  hintFontSize?: number; // 提示/辅助文字字号（透传给消息气泡）
   bubbleStyle: 'green' | 'white'; // 我的气泡样式：green 经典绿底 / white 简洁白底
   groupName: string;
   highlightMsgId: number | null; // 面板跳转定位的目标消息
@@ -114,6 +115,7 @@ export const MessageList = ({
   onTodoNoteEdit,
   isDarkMode,
   fontSize,
+  hintFontSize,
   bubbleStyle,
   groupName,
   highlightMsgId,
@@ -193,12 +195,14 @@ export const MessageList = ({
     exitSelect();
   };
 
-  // 多选生成卡片：选中消息（按时间正序）合成一张图文混排分享卡片，上限 CARD_MAX 条
+  // 多选生成卡片：按「用户点选顺序」合成图文混排分享卡片（Set 本身保持插入顺序），上限 CARD_MAX 条。
+  // 合并转发/合并复制仍按时间正序，只有卡片尊重点选顺序，方便手动调整文字与图片的先后。
   const CARD_MAX = 20;
   const confirmShareCard = () => {
-    const list = messages
-      .filter((m) => selected.has(m.id) && selectable(m))
-      .sort((a, b) => a.id - b.id);
+    const byId = new Map(messages.map((m) => [m.id, m]));
+    const list = Array.from(selected)
+      .map((id) => byId.get(id))
+      .filter((m): m is ChatMessage => !!m && selectable(m));
     if (list.length === 0) return;
     if (list.length > CARD_MAX) {
       setCopyHint(`一次最多生成 ${CARD_MAX} 条`);
@@ -413,6 +417,7 @@ export const MessageList = ({
                         foldLen={foldLen}
                         isDarkMode={isDarkMode}
                         fontSize={fontSize}
+                        hintFontSize={hintFontSize}
                         bubbleStyle={bubbleStyle}
                         highlighted={highlightMsgId === m.id}
                       />

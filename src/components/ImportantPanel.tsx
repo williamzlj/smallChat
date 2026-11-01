@@ -8,6 +8,7 @@ import { ContextModal } from './ContextModal';
 interface Props {
   isDarkMode: boolean;
   fontSize: number;
+  hintFontSize?: number; // 提示/辅助文字字号（独立于消息字号）
   onJump: (groupId: number, messageId: number) => void;
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
@@ -32,7 +33,7 @@ const IMPORTANT_TAB_KEY = 'smallchat-important-tab';
 const isColorTab = (v: string | null): v is Tab => v !== null && v in colorMap;
 
 // 跨群重要消息面板：红 / 橘 / 黄 / 绿 / 蓝 / 紫 / 灰，支持右键改色、归档、多选合并复制、查看按钮
-export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, sidebarOpen, active, roleOf, onDelegate }: Props) => {
+export const ImportantPanel = ({ isDarkMode, fontSize, hintFontSize, onJump, onToggleSidebar, sidebarOpen, active, roleOf, onDelegate }: Props) => {
   const [tab, setTab] = useState<Tab>(() => {
     const v = localStorage.getItem(IMPORTANT_TAB_KEY);
     return isColorTab(v) ? v : 'red';
@@ -325,6 +326,7 @@ export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, 
               msg={m}
               isDarkMode={isDarkMode}
               fontSize={fontSize}
+              hintFontSize={hintFontSize}
               mode="important"
               selected={selected.has(m.id)}
               selectMode={selectMode}
@@ -356,6 +358,7 @@ export const ImportantPanel = ({ isDarkMode, fontSize, onJump, onToggleSidebar, 
           messageId={contextMsg.id}
           isDarkMode={isDarkMode}
           fontSize={fontSize}
+          hintFontSize={hintFontSize}
           onClose={() => setContextMsg(null)}
           onJump={(gid, mid) => {
             setContextMsg(null);

@@ -11,6 +11,8 @@ interface Props {
   user: User;
   fontSize: number;
   onFontSizeChange: (size: number) => void;
+  hintFontSize: number; // 提示/辅助文字字号（时间、备注、引用等），与消息字号独立
+  onHintFontSizeChange: (size: number) => void;
   bubbleStyle: 'green' | 'white'; // 我的气泡样式（仅本设备 localStorage）
   onBubbleStyleChange: (style: 'green' | 'white') => void;
   foldLen: number; // 长消息折叠字数阈值（0=不折叠），仅本设备 localStorage
@@ -38,6 +40,8 @@ export const ProfileSettings = ({
   user,
   fontSize,
   onFontSizeChange,
+  hintFontSize,
+  onHintFontSizeChange,
   bubbleStyle,
   onBubbleStyleChange,
   foldLen,
@@ -251,7 +255,7 @@ export const ProfileSettings = ({
             </button>
           </section>
 
-          {/* 字号 */}
+          {/* 字号：消息与提示分开设置，互不影响 */}
           <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
             <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">消息字号</h3>
             <div className="flex items-center space-x-3">
@@ -265,13 +269,36 @@ export const ProfileSettings = ({
                 {fontSize}px
               </div>
               <button
-                onClick={() => onFontSizeChange(Math.min(24, fontSize + 1))}
+                onClick={() => onFontSizeChange(Math.min(28, fontSize + 1))}
                 className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
               >
                 <Plus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
               </button>
             </div>
-            <p className="text-xs text-gray-400">范围 14px - 24px，仅保存在本设备</p>
+            <p className="text-xs text-gray-400">范围 14px - 28px，仅保存在本设备</p>
+          </section>
+
+          {/* 提示字号：时间、备注、引用、待办标记等辅助文字，独立于消息字号 */}
+          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">提示字号</h3>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => onHintFontSizeChange(Math.max(12, hintFontSize - 1))}
+                className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
+              >
+                <Minus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+              <div className="flex-1 bg-gray-50 dark:bg-gray-700/60 rounded-lg px-4 py-2.5 text-center text-base font-medium text-gray-800 dark:text-gray-200">
+                {hintFontSize}px
+              </div>
+              <button
+                onClick={() => onHintFontSizeChange(Math.min(20, hintFontSize + 1))}
+                className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
+              >
+                <Plus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-400">用于时间、备注、引用等辅助文字，范围 12px - 20px，不随消息字号变化</p>
           </section>
 
           {/* 我的气泡样式：两个预览小块单选，与字号一样仅保存在本设备 */}

@@ -29,6 +29,7 @@ import { ChatMessage, Friend, GroupMember, ForwardPayload, AmountType } from './
 
 const DARK_KEY = 'smallchat-dark';
 const FONT_KEY = 'smallchat-fontsize';
+const HINT_FONT_KEY = 'smallchat-hint-fontsize'; // 提示/辅助文字字号（时间、备注、引用等），与消息字号独立
 const GROUP_KEY = 'smallchat-current-group';
 const BUBBLE_KEY = 'smallchat-bubble-style'; // 我的气泡样式：green 经典绿底 / white 简洁白底（仅本设备）
 
@@ -56,7 +57,12 @@ export default function App() {
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => localStorage.getItem(DARK_KEY) === '1');
   const [fontSize, setFontSize] = useState<number>(() => {
     const v = parseInt(localStorage.getItem(FONT_KEY) || '16', 10);
-    return Number.isFinite(v) ? Math.min(24, Math.max(14, v)) : 16;
+    return Number.isFinite(v) ? Math.min(28, Math.max(14, v)) : 16;
+  });
+  // 提示字号：独立于消息字号，默认 14px（未设置过的老用户保持原来的小字观感，不再随消息字号放大）
+  const [hintFontSize, setHintFontSize] = useState<number>(() => {
+    const v = parseInt(localStorage.getItem(HINT_FONT_KEY) || '14', 10);
+    return Number.isFinite(v) ? Math.min(20, Math.max(12, v)) : 14;
   });
   // 我的气泡样式（仅本地保存，不上传服务器）
   const [bubbleStyle, setBubbleStyle] = useState<'green' | 'white'>(() =>
@@ -162,6 +168,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(FONT_KEY, String(fontSize));
   }, [fontSize]);
+
+  useEffect(() => {
+    localStorage.setItem(HINT_FONT_KEY, String(hintFontSize));
+  }, [hintFontSize]);
 
   useEffect(() => {
     localStorage.setItem(BUBBLE_KEY, bubbleStyle);
@@ -787,6 +797,7 @@ export default function App() {
           <TodoPanel
             isDarkMode={isDarkMode}
             fontSize={fontSize}
+            hintFontSize={hintFontSize}
             currentUserId={user.id}
             onJump={handlePanelJump}
             onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
@@ -800,6 +811,7 @@ export default function App() {
           <ImportantPanel
             isDarkMode={isDarkMode}
             fontSize={fontSize}
+            hintFontSize={hintFontSize}
             onJump={handlePanelJump}
             onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
             sidebarOpen={sidebarVisible}
@@ -1183,6 +1195,7 @@ export default function App() {
               onJumpDone={() => setJumpRequest(null)}
               isDarkMode={isDarkMode}
               fontSize={fontSize}
+              hintFontSize={hintFontSize}
               bubbleStyle={bubbleStyle}
               groupName={groupTitle}
               highlightMsgId={highlightMsgId}
@@ -1251,6 +1264,8 @@ export default function App() {
           user={user}
           fontSize={fontSize}
           onFontSizeChange={setFontSize}
+          hintFontSize={hintFontSize}
+          onHintFontSizeChange={setHintFontSize}
           bubbleStyle={bubbleStyle}
           onBubbleStyleChange={setBubbleStyle}
           foldLen={foldLen}
