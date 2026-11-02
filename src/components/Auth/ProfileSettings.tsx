@@ -259,36 +259,6 @@ export const ProfileSettings = ({
             </button>
           </section>
 
-          {/* 发送消息模式：默认 Enter 换行防误发；需要快速发送时可切换为 Enter 发送 */}
-          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">发送消息</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => onEnterToSendChange(false)}
-                className={`px-3 py-2.5 rounded-lg border text-center transition-colors ${
-                  !enterToSend
-                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                    : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="block text-sm font-medium">Enter 换行</span>
-                <span className="block text-xs mt-0.5 opacity-80">Ctrl+Enter 发送</span>
-              </button>
-              <button
-                onClick={() => onEnterToSendChange(true)}
-                className={`px-3 py-2.5 rounded-lg border text-center transition-colors ${
-                  enterToSend
-                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                    : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="block text-sm font-medium">Enter 发送</span>
-                <span className="block text-xs mt-0.5 opacity-80">Ctrl+Enter 换行</span>
-              </button>
-            </div>
-            <p className="text-xs text-gray-400">仅电脑端键盘生效，仅保存在本设备；快速模式下 Shift+Enter 也可换行</p>
-          </section>
-
           {/* 字号：消息与提示分开设置，互不影响 */}
           <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
             <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">消息字号</h3>
@@ -365,6 +335,36 @@ export const ProfileSettings = ({
               </button>
             </div>
             <p className="text-xs text-gray-400">仅改变本设备显示，不影响其他成员</p>
+          </section>
+
+          {/* 发送消息模式：默认 Enter 换行防误发；需要快速发送时可切换为 Enter 发送 */}
+          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">发送消息</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => onEnterToSendChange(false)}
+                className={`px-3 py-2.5 rounded-lg border text-center transition-colors ${
+                  !enterToSend
+                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="block text-sm font-medium">Enter 换行</span>
+                <span className="block text-xs mt-0.5 opacity-80">Ctrl+Enter 发送</span>
+              </button>
+              <button
+                onClick={() => onEnterToSendChange(true)}
+                className={`px-3 py-2.5 rounded-lg border text-center transition-colors ${
+                  enterToSend
+                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="block text-sm font-medium">Enter 发送</span>
+                <span className="block text-xs mt-0.5 opacity-80">Ctrl+Enter 换行</span>
+              </button>
+            </div>
+            <p className="text-xs text-gray-400">仅电脑端键盘生效，仅保存在本设备；快速模式下 Shift+Enter 也可换行</p>
           </section>
 
           {/* 长消息折叠：超过设定字数的消息默认折叠 6 行，点击可展开；仅本设备生效。0=不折叠 */}
