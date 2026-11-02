@@ -1,4 +1,4 @@
-﻿﻿import { useState, useEffect } from 'react';
+﻿﻿﻿﻿import { useState, useEffect } from 'react';
 import { X, LogOut, Minus, Plus, Monitor, Trash2, Check, Camera, RefreshCw, Copy } from 'lucide-react';
 import { User, TokenInfo } from '../../api/types';
 import { api } from '../../api/client';
@@ -15,6 +15,8 @@ interface Props {
   onHintFontSizeChange: (size: number) => void;
   bubbleStyle: 'green' | 'white'; // 我的气泡样式（仅本设备 localStorage）
   onBubbleStyleChange: (style: 'green' | 'white') => void;
+  enterToSend: boolean; // 发送模式：true=Enter 发送/Ctrl+Enter 换行；false=Enter 换行（默认）
+  onEnterToSendChange: (v: boolean) => void;
   foldLen: number; // 长消息折叠字数阈值（0=不折叠），仅本设备 localStorage
   onFoldLenChange: (n: number) => void;
   todoNotePopup: boolean; // 设为待办时弹出待办备注窗口（快速输入预计时长），仅本设备
@@ -44,6 +46,8 @@ export const ProfileSettings = ({
   onHintFontSizeChange,
   bubbleStyle,
   onBubbleStyleChange,
+  enterToSend,
+  onEnterToSendChange,
   foldLen,
   onFoldLenChange,
   todoNotePopup,
@@ -253,6 +257,36 @@ export const ProfileSettings = ({
             >
               保存资料
             </button>
+          </section>
+
+          {/* 发送消息模式：默认 Enter 换行防误发；需要快速发送时可切换为 Enter 发送 */}
+          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">发送消息</h3>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => onEnterToSendChange(false)}
+                className={`px-3 py-2.5 rounded-lg border text-center transition-colors ${
+                  !enterToSend
+                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="block text-sm font-medium">Enter 换行</span>
+                <span className="block text-xs mt-0.5 opacity-80">Ctrl+Enter 发送</span>
+              </button>
+              <button
+                onClick={() => onEnterToSendChange(true)}
+                className={`px-3 py-2.5 rounded-lg border text-center transition-colors ${
+                  enterToSend
+                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                }`}
+              >
+                <span className="block text-sm font-medium">Enter 发送</span>
+                <span className="block text-xs mt-0.5 opacity-80">Ctrl+Enter 换行</span>
+              </button>
+            </div>
+            <p className="text-xs text-gray-400">仅电脑端键盘生效，仅保存在本设备；快速模式下 Shift+Enter 也可换行</p>
           </section>
 
           {/* 字号：消息与提示分开设置，互不影响 */}

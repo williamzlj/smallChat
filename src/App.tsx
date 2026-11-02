@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Menu, X, Info, Hash, Search, ListTodo, Pin, MessageCircle, Flag, CheckCheck, Megaphone, ArrowLeft, Wallet, Banknote, ChevronDown, Check, ChevronsDown, History } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { AvatarCropModal } from './components/AvatarCropModal';
@@ -32,6 +32,7 @@ const FONT_KEY = 'smallchat-fontsize';
 const HINT_FONT_KEY = 'smallchat-hint-fontsize'; // 提示/辅助文字字号（时间、备注、引用等），与消息字号独立
 const GROUP_KEY = 'smallchat-current-group';
 const BUBBLE_KEY = 'smallchat-bubble-style'; // 我的气泡样式：green 经典绿底 / white 简洁白底（仅本设备）
+const ENTER_SEND_KEY = 'smallchat-enter-send'; // 发送模式：true=Enter 发送/Ctrl+Enter 换行；false=Enter 换行/Ctrl+Enter 发送（默认）
 
 type AuthMode = 'login' | 'register';
 type View = 'chats' | 'friends' | 'todos' | 'important';
@@ -68,6 +69,8 @@ export default function App() {
   const [bubbleStyle, setBubbleStyle] = useState<'green' | 'white'>(() =>
     localStorage.getItem(BUBBLE_KEY) === 'white' ? 'white' : 'green',
   );
+  // 快速发送模式：开启后 Enter 直接发送、Ctrl+Enter 换行；默认关闭（Enter 换行防误发）
+  const [enterToSend, setEnterToSend] = useState<boolean>(() => localStorage.getItem(ENTER_SEND_KEY) === '1');
   const [currentGroupId, setCurrentGroupId] = useState<number | null>(() => {
     const v = parseInt(localStorage.getItem(GROUP_KEY) || '', 10);
     return Number.isFinite(v) && v > 0 ? v : null;
@@ -176,6 +179,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(BUBBLE_KEY, bubbleStyle);
   }, [bubbleStyle]);
+
+  useEffect(() => {
+    localStorage.setItem(ENTER_SEND_KEY, enterToSend ? '1' : '0');
+  }, [enterToSend]);
 
   useEffect(() => {
     if (currentGroupId) localStorage.setItem(GROUP_KEY, String(currentGroupId));
@@ -1216,6 +1223,7 @@ export default function App() {
               uploadProgress={uploadProgress}
               isDarkMode={isDarkMode}
               fontSize={fontSize}
+              enterToSend={enterToSend}
             />
           </div>
         ) : (
@@ -1268,6 +1276,8 @@ export default function App() {
           onHintFontSizeChange={setHintFontSize}
           bubbleStyle={bubbleStyle}
           onBubbleStyleChange={setBubbleStyle}
+          enterToSend={enterToSend}
+          onEnterToSendChange={setEnterToSend}
           foldLen={foldLen}
           onFoldLenChange={setFoldLen}
           todoNotePopup={todoNotePopup}

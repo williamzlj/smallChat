@@ -23,6 +23,7 @@ interface Props {
   uploadProgress: number | null;
   isDarkMode: boolean;
   fontSize: number;
+  enterToSend?: boolean; // true=Enter 发送/Ctrl+Enter 换行；false/缺省=Enter 换行/Ctrl+Enter 发送
 }
 
 // 图片压缩：超宽缩小，大图转 JPEG
@@ -125,6 +126,7 @@ export const InputBox = ({
   uploadProgress,
   isDarkMode,
   fontSize,
+  enterToSend = false,
 }: Props) => {
   const draftKey = `smallchat-draft-${groupId}`;
   // 草稿按群保存在 localStorage（App 侧已按 groupId key 本组件，切群即重挂载恢复草稿）
@@ -245,8 +247,16 @@ export const InputBox = ({
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Enter=换行；Ctrl/Cmd+Enter=发送（误发长文/半截消息的预防）
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    if (e.key !== 'Enter') return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (enterToSend) {
+      // 快速发送模式：Enter=发送；Ctrl/Cmd+Enter=换行（走默认行为）；Shift+Enter 也保留换行
+      if (!mod && !e.shiftKey) {
+        e.preventDefault();
+        submitText();
+      }
+    } else if (mod) {
+      // 默认模式：Enter=换行；Ctrl/Cmd+Enter=发送（误发长文/半截消息的预防）
       e.preventDefault();
       submitText();
     }
@@ -613,7 +623,9 @@ export const InputBox = ({
                 ? '观察者仅可查看，不能发送消息'
                 : isMobile
                   ? ''
-                  : 'Enter 换行，Ctrl+Enter 发送，@ 提醒成员'
+                  : enterToSend
+                    ? 'Enter 发送，Ctrl+Enter 换行，@ 提醒成员'
+                    : 'Enter 换行，Ctrl+Enter 发送，@ 提醒成员'
             }
             rows={1}
             className={`w-full px-3 py-2 rounded-2xl outline-none resize-none overflow-y-auto disabled:cursor-not-allowed ${
