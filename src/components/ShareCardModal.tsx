@@ -820,7 +820,7 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
   // 署名+小方块 baseline 对齐：空 inline-block 的 baseline 即其底边，方块底正好落在文字基线上（中文字形底≈基线），任何字号下视觉都是"与文字底对齐"
   const signatureNode = style.showSignature ? (
     <span className="flex items-baseline" style={{ color: sigColorHex, fontSize: sigFontSize }}>
-      {signature}
+      <span className="whitespace-pre-line text-right">{signature}</span>
       <span
         style={{
           width: 8,
@@ -950,7 +950,6 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
           }`}
         >
           <Pipette className="w-3.5 h-3.5 flex-shrink-0" />
-          <span className="whitespace-nowrap">自定义</span>
           <span
             className={`w-3 h-3 rounded-sm border flex-shrink-0 ${isDarkMode ? 'border-gray-500' : 'border-gray-300'}`}
             style={{ backgroundColor: current ?? defaultColor ?? t.text }}
@@ -1453,21 +1452,18 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
             </div>
 
             <div className="p-4 overflow-y-auto">
-              {/* 署名：记 localStorage，20 字以内，留空不显示署名；有文字时右侧出现清空按钮 */}
+              {/* 署名：记 localStorage，40 字以内，支持换行；留空不显示署名 */}
               {textEdit === 'sig' && (
                 <div>
                   <div className="relative">
-                    <input
+                    <textarea
                       autoFocus
-                      type="text"
+                      rows={2}
                       value={signature}
                       onChange={(e) => setSignature(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') setTextEdit(null);
-                      }}
                       maxLength={40}
                       placeholder="留空则不显示署名"
-                      className={`${editInputCls} pr-8`}
+                      className={`${editInputCls} pr-8 resize-y`}
                     />
                     {clearBtn(signature, () => setSignature(''))}
                   </div>
@@ -1494,18 +1490,7 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
                         (c) => setOptionalColor('sigColor', c),
                         true,
                         undefined,
-                        // 取色器右侧空间不多，插一个「插入群名」按钮：拼成「群名称」追加到文本框末尾
-                        <button
-                          disabled={!groupName}
-                          onClick={() => setSignature((prev) => `${prev}「${groupName}」`.slice(0, 40))}
-                          className={`ml-1 h-7 px-2 rounded-md border text-sm whitespace-nowrap disabled:opacity-40 ${
-                            isDarkMode
-                              ? 'border-gray-500 text-gray-300 hover:bg-gray-700'
-                              : 'border-gray-300 text-gray-600 hover:bg-gray-50'
-                          }`}
-                        >
-                          插入群名
-                        </button>,
+                        undefined,
                       )}
                     </div>
                   </div>
@@ -1516,15 +1501,30 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
                       <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                         常用签名（{signatures.length}/{MAX_SIGNATURES}）
                       </span>
-                      <button
-                        onClick={addSignature}
-                        disabled={!canSaveSig}
-                        className={`flex items-center gap-0.5 text-sm disabled:opacity-40 ${
-                          isDarkMode ? 'text-green-400 hover:text-green-300' : 'text-green-600 hover:text-green-700'
-                        }`}
-                      >
-                        保存当前
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          disabled={!groupName}
+                          onClick={() => setSignature((prev) => `${prev}「${groupName}」`.slice(0, 40))}
+                          className={`h-7 px-2 rounded-md border text-sm whitespace-nowrap disabled:opacity-40 ${
+                            isDarkMode
+                              ? 'border-gray-500 text-gray-300 hover:bg-gray-700'
+                              : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          插入群名
+                        </button>
+                        <button
+                          onClick={addSignature}
+                          disabled={!canSaveSig}
+                          className={`h-7 px-2 rounded-md border flex items-center gap-0.5 text-sm whitespace-nowrap disabled:opacity-40 ${
+                            isDarkMode
+                              ? 'border-gray-500 text-green-400 hover:bg-gray-700 hover:text-green-300'
+                              : 'border-gray-300 text-green-600 hover:bg-gray-50 hover:text-green-700'
+                          }`}
+                        >
+                          保存当前
+                        </button>
+                      </div>
                     </div>
                     {signatures.length === 0 ? (
                       <p className={`text-sm ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
@@ -1674,8 +1674,10 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
                       <button
                         onClick={addTitle}
                         disabled={!canSaveTitle}
-                        className={`flex items-center gap-0.5 text-sm disabled:opacity-40 ${
-                          isDarkMode ? 'text-green-400 hover:text-green-300' : 'text-green-600 hover:text-green-700'
+                        className={`h-7 px-2 rounded-md border flex items-center gap-0.5 text-sm whitespace-nowrap disabled:opacity-40 ${
+                          isDarkMode
+                            ? 'border-gray-500 text-green-400 hover:bg-gray-700 hover:text-green-300'
+                            : 'border-gray-300 text-green-600 hover:bg-gray-50 hover:text-green-700'
                         }`}
                       >
                         保存当前

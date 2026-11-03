@@ -26,11 +26,19 @@ export interface Group {
   remark: string; // 群备注（当前用户自己的私有备注）
   ledger_enabled: number; // 1=该会话已开启财务记账（私聊恒为 1；群聊默认 0，未开启时不显示记账入口）
   pinned_chat: number; // 会话置顶（当前用户自己，0普通 1普通置顶 2超级置顶，多设备同步）
+  category_id: number; // 所在群分组（当前用户私有，0=未分组）
   member_count: number;
   last_msg_id: number;
   last_read_msg_id: number; // 当前用户在该群的已读位置
   unread_count: number; // 未读消息数（他人发送）
   dm_peer: User | null; // 私聊对方信息（is_dm=1 时非空）
+  created_at: string;
+}
+
+export interface GroupCategory {
+  id: number;
+  name: string;
+  pinned: number; // 0普通 1普通置顶 2超级置顶
   created_at: string;
 }
 

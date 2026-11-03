@@ -1,12 +1,19 @@
-import { Plus, Settings, Moon, Sun, Users, Hash, Search, ListTodo, Flag, Pin } from 'lucide-react';
-import { User, Group } from '../api/types';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Plus, Settings, Moon, Sun, Users, Hash, Search, ListTodo, Flag, Pin, ChevronDown, ChevronRight, Folder, FolderPlus, FolderInput, FolderCog, Pencil, Trash2, Check, X } from 'lucide-react';
+import { User, Group, GroupCategory } from '../api/types';
 import { Avatar } from './Avatar';
 
 type SidebarView = 'chats' | 'friends' | 'todos' | 'important';
+type SidebarModal =
+  | { type: 'category'; category: GroupCategory | null }
+  | { type: 'move'; group: Group }
+  | null;
 
 interface SidebarProps {
   user: User;
   groups: Group[];
+  categories: GroupCategory[];
   currentGroupId: number | null;
   view: SidebarView;
   onSelectGroup: (id: number) => void;
@@ -16,6 +23,11 @@ interface SidebarProps {
   onOpenSearch: () => void;
   onChangeAvatar: () => void;
   onTogglePin: (groupId: number, pinned: number) => void;
+  onCreateCategory: (name: string) => Promise<void>;
+  onRenameCategory: (categoryId: number, name: string) => Promise<void>;
+  onDeleteCategory: (categoryId: number) => Promise<void>;
+  onToggleCategoryPin: (categoryId: number, pinned: number) => void;
+  onSetGroupCategory: (groupId: number, categoryId: number) => Promise<void>;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
 }
@@ -23,6 +35,7 @@ interface SidebarProps {
 export const Sidebar = ({
   user,
   groups,
+  categories,
   currentGroupId,
   view,
   onSelectGroup,
@@ -32,9 +45,64 @@ export const Sidebar = ({
   onOpenSearch,
   onChangeAvatar,
   onTogglePin,
+  onCreateCategory,
+  onRenameCategory,
+  onDeleteCategory,
+  onToggleCategoryPin,
+  onSetGroupCategory,
   isDarkMode,
   onToggleDarkMode,
 }: SidebarProps) => {
+  const [modal, setModal] = useState<SidebarModal>(null);
+  const [categoryName, setCategoryName] = useState('');
+  const [modalError, setModalError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [manageCategories, setManageCategories] = useState(false);
+  const collapseKey = `smallchat-category-collapsed-${user.id}`;
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(collapseKey) || '{}');
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(collapseKey, JSON.stringify(collapsed));
+  }, [collapseKey, collapsed]);
+
+  // “常用”固定在最上方；其余分组和群按“超级置顶 > 置顶 > 最近活跃”排序
+  const sections = useMemo(() => {
+    const known = new Set(categories.map((c) => c.id));
+    const grouped = new Map<number, Group[]>();
+    groups.forEach((g) => {
+      const rawId = g.category_id || 0;
+      const cid = rawId > 0 && known.has(rawId) ? rawId : 0;
+      grouped.set(cid, [...(grouped.get(cid) || []), g]);
+    });
+    const sortGroups = (list: Group[]) => [...list].sort((a, b) =>
+      (b.pinned_chat || 0) - (a.pinned_chat || 0) ||
+      (b.last_msg_id || 0) - (a.last_msg_id || 0) ||
+      b.id - a.id,
+    );
+    const result = [
+      { category: null as GroupCategory | null, groups: sortGroups(grouped.get(0) || []) },
+      ...categories.map((category) => ({ category, groups: sortGroups(grouped.get(category.id) || []) })),
+    ];
+    const activity = (list: Group[]) => Math.max(0, ...list.map((g) => g.last_msg_id || 0));
+    const latestGroupId = (list: Group[]) => Math.max(0, ...list.map((g) => g.id));
+    return result.sort((a, b) => {
+      if (!a.category) return -1;
+      if (!b.category) return 1;
+      return (
+        (b.category.pinned || 0) - (a.category.pinned || 0) ||
+        activity(b.groups) - activity(a.groups) ||
+        latestGroupId(b.groups) - latestGroupId(a.groups) ||
+        b.category.id - a.category.id
+      );
+    });
+  }, [groups, categories]);
+
   // 全部群未读总数（聊天 tab 红点用）
   const totalUnread = groups.reduce((s, g) => s + (g.unread_count || 0), 0);
   const tabBtn = (active: boolean) =>
@@ -45,9 +113,137 @@ export const Sidebar = ({
           ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
           : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
     }`;
+
+  const openCategoryModal = (category: GroupCategory | null) => {
+    setCategoryName(category?.name || '');
+    setModalError('');
+    setModal({ type: 'category', category });
+  };
+  const openMoveModal = (group: Group) => {
+    setModalError('');
+    setModal({ type: 'move', group });
+  };
+  const closeModal = () => {
+    if (!busy) setModal(null);
+  };
+  const saveCategory = async () => {
+    if (modal?.type !== 'category') return;
+    const name = categoryName.trim();
+    if (!name) {
+      setModalError('请输入分组名称');
+      return;
+    }
+    setBusy(true);
+    setModalError('');
+    try {
+      if (modal.category) await onRenameCategory(modal.category.id, name);
+      else await onCreateCategory(name);
+      setModal(null);
+    } catch (e) {
+      setModalError(e instanceof Error ? e.message : '保存失败');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const deleteCategory = async (category: GroupCategory) => {
+    if (!confirm(`删除分组“${category.name}”？其中的群会移回常用，群和消息不会被删除。`)) return;
+    try {
+      await onDeleteCategory(category.id);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '删除失败');
+    }
+  };
+  const moveToCategory = async (categoryId: number) => {
+    if (modal?.type !== 'move') return;
+    setBusy(true);
+    setModalError('');
+    try {
+      await onSetGroupCategory(modal.group.id, categoryId);
+      setModal(null);
+    } catch (e) {
+      setModalError(e instanceof Error ? e.message : '移动失败');
+    } finally {
+      setBusy(false);
+    }
+  };
+  const pinColor = (state: number, normal = false) =>
+    state === 2
+      ? 'text-red-500 hover:text-red-600'
+      : state === 1
+        ? 'text-green-500 hover:text-green-600'
+        : isDarkMode
+          ? normal ? 'text-gray-500 hover:text-gray-300' : 'text-gray-600 hover:text-gray-300'
+          : normal ? 'text-gray-400 hover:text-gray-600' : 'text-gray-300 hover:text-gray-500';
+
+  const renderGroup = (g: Group) => {
+    const active = g.id === currentGroupId;
+    const dmPeer = g.is_dm === 1 ? g.dm_peer : null;
+    const st = g.pinned_chat || 0;
+    const next = st >= 2 ? 0 : st + 1;
+    return (
+      <div
+        key={g.id}
+        role="button"
+        tabIndex={0}
+        onClick={() => onSelectGroup(g.id)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelectGroup(g.id);
+          }
+        }}
+        className={`group w-full flex items-center space-x-2 px-2 py-2.5 rounded-xl mb-1 text-left transition-colors ${
+          active
+            ? isDarkMode ? 'bg-gray-700' : 'bg-green-100'
+            : isDarkMode ? 'hover:bg-gray-700/60' : 'hover:bg-gray-200/70'
+        }`}
+      >
+        <div className="relative flex-shrink-0">
+          {dmPeer ? (
+            <Avatar userId={dmPeer.id} nickname={dmPeer.nickname} color={dmPeer.color} avatarVer={dmPeer.avatar_ver} size={40} className="rounded-lg" />
+          ) : (
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${active ? 'bg-green-500 text-white' : isDarkMode ? 'bg-gray-600 text-gray-300' : 'bg-white text-green-600 shadow-sm'}`}>
+              <Users className="w-5 h-5" />
+            </div>
+          )}
+          {(g.unread_count || 0) > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] leading-[18px] text-center font-bold">
+              {g.unread_count > 99 ? '99+' : g.unread_count}
+            </span>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-medium truncate ${active ? isDarkMode ? 'text-white' : 'text-green-800' : isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+            {dmPeer ? dmPeer.nickname : g.remark || g.name}
+          </p>
+          <p className="text-xs text-gray-400 truncate">
+            {dmPeer ? '私聊' : `${g.member_count} 位成员`}
+            {g.is_archived === 1 && ' · 已停用'}
+          </p>
+        </div>
+        {manageCategories && (
+          <button
+            onClick={(e) => { e.stopPropagation(); openMoveModal(g); }}
+            title="移动到分组"
+            className={`flex-shrink-0 p-1 rounded ${pinColor(0, true)}`}
+          >
+            <FolderInput className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onTogglePin(g.id, next); }}
+          title={st === 2 ? '取消置顶' : st === 1 ? '超级置顶' : '置顶会话'}
+          className={`flex-shrink-0 p-1 rounded ${pinColor(st)}`}
+        >
+          <Pin className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div
-      className={`w-64 border-r flex flex-col h-full transition-colors duration-300 ${
+      className={`w-[307px] border-r flex flex-col h-full transition-colors duration-300 ${
         isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
       }`}
     >
@@ -92,18 +288,35 @@ export const Sidebar = ({
         </button>
       </div>
 
-      {/* 建群 */}
-      <div className="p-3">
+      {/* 建群与分组 */}
+      <div className="p-3 flex gap-2">
         <button
           onClick={onCreateGroup}
-          className="w-full flex items-center justify-center space-x-2 bg-gradient-to-r from-green-500 to-green-600 text-white py-2.5 rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md hover:shadow-lg text-sm font-medium"
+          className="flex-1 flex items-center justify-center space-x-1.5 bg-gradient-to-r from-green-500 to-green-600 text-white py-2.5 rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md hover:shadow-lg text-sm font-medium"
         >
           <Plus className="w-4 h-4" />
           <span>新建群聊</span>
         </button>
+        <button
+          onClick={() => openCategoryModal(null)}
+          title="新建分组"
+          aria-label="新建分组"
+          className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-xl border ${isDarkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+        >
+          <FolderPlus className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => setManageCategories((v) => !v)}
+          title={manageCategories ? '完成分组管理' : '管理分组'}
+          aria-label={manageCategories ? '完成分组管理' : '管理分组'}
+          aria-pressed={manageCategories}
+          className={`w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-xl border ${manageCategories ? 'border-green-500 bg-green-500 text-white hover:bg-green-600' : isDarkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+        >
+          <FolderCog className="w-4 h-4" />
+        </button>
       </div>
 
-      {/* 群列表 */}
+      {/* 群分组与群列表 */}
       <div className={`flex-1 overflow-y-auto px-2 pb-2 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
         {groups.length === 0 ? (
           <div className="text-center text-sm text-gray-400 mt-10 px-4">
@@ -112,101 +325,63 @@ export const Sidebar = ({
             点击上方按钮创建一个吧
           </div>
         ) : (
-          groups.map((g) => {
-            const active = g.id === currentGroupId;
-            const dmPeer = g.is_dm === 1 ? g.dm_peer : null;
+          sections.map((section) => {
+            const category = section.category;
+            const cid = category?.id || 0;
+            const isCollapsed = !!collapsed[String(cid)];
+            const st = category?.pinned || 0;
+            const next = st >= 2 ? 0 : st + 1;
             return (
-              <div
-                key={g.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => onSelectGroup(g.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onSelectGroup(g.id);
-                  }
-                }}
-                className={`group w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl mb-1 text-left transition-colors ${
-                  active
-                    ? isDarkMode
-                      ? 'bg-gray-700'
-                      : 'bg-green-100'
-                    : isDarkMode
-                      ? 'hover:bg-gray-700/60'
-                      : 'hover:bg-gray-200/70'
-                }`}
-              >
-                <div className="relative flex-shrink-0">
-                  {dmPeer ? (
-                    <Avatar
-                      userId={dmPeer.id}
-                      nickname={dmPeer.nickname}
-                      color={dmPeer.color}
-                      avatarVer={dmPeer.avatar_ver}
-                      size={40}
-                      className="rounded-lg"
-                    />
-                  ) : (
-                    <div
-                      className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                        active ? 'bg-green-500 text-white' : isDarkMode ? 'bg-gray-600 text-gray-300' : 'bg-white text-green-600 shadow-sm'
-                      }`}
-                    >
-                      <Users className="w-5 h-5" />
+              <div key={cid} className="mb-2">
+                <div className="flex items-center px-1 mb-1">
+                  <button
+                    onClick={() => setCollapsed((prev) => ({ ...prev, [String(cid)]: !prev[String(cid)] }))}
+                    className={`flex-1 min-w-0 flex items-center gap-1 py-1 text-left text-xs font-medium ${isDarkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`}
+                    title={isCollapsed ? '展开分组' : '折叠分组'}
+                  >
+                    {isCollapsed ? <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" />}
+                    <Folder className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span className="truncate">{category?.name || '常用'}</span>
+                    <span className="text-gray-400 flex-shrink-0">{section.groups.length}</span>
+                  </button>
+                  {category && (
+                    <div className="flex items-center flex-shrink-0">
+                      <button
+                        onClick={() => onToggleCategoryPin(category.id, next)}
+                        title={st === 2 ? '取消置顶' : st === 1 ? '超级置顶' : '置顶分组'}
+                        className={`p-1 rounded ${pinColor(st)}`}
+                      >
+                        <Pin className="w-3.5 h-3.5" />
+                      </button>
+                      {manageCategories && (
+                        <>
+                          <button
+                            onClick={() => openCategoryModal(category)}
+                            title="重命名分组"
+                            className={`p-1 rounded ${pinColor(0, true)}`}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => void deleteCategory(category)}
+                            title="删除分组"
+                            className={`p-1 rounded ${pinColor(0, true)} hover:text-red-500`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
-                  {(g.unread_count || 0) > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] leading-[18px] text-center font-bold">
-                      {g.unread_count > 99 ? '99+' : g.unread_count}
-                    </span>
-                  )}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p
-                    className={`text-sm font-medium truncate ${
-                      active
-                        ? isDarkMode
-                          ? 'text-white'
-                          : 'text-green-800'
-                        : isDarkMode
-                          ? 'text-gray-200'
-                          : 'text-gray-800'
-                    }`}
-                  >
-                    {dmPeer ? dmPeer.nickname : g.remark || g.name}
-                  </p>
-                  <p className="text-xs text-gray-400 truncate">
-                    {dmPeer ? '私聊' : `${g.member_count} 位成员`}
-                    {g.is_archived === 1 && ' · 已停用'}
-                  </p>
-                </div>
-                {(() => {
-                  // 三态循环：0普通 → 1普通置顶 → 2超级置顶 → 0普通
-                  const st = g.pinned_chat || 0;
-                  const next = st >= 2 ? 0 : st + 1;
-                  const pinColor =
-                    st === 2
-                      ? 'text-red-500 hover:text-red-600'
-                      : st === 1
-                        ? 'text-green-500 hover:text-green-600'
-                        : isDarkMode
-                          ? 'text-gray-600 hover:text-gray-300'
-                          : 'text-gray-300 hover:text-gray-500';
-                  const pinTitle = st === 2 ? '取消置顶' : st === 1 ? '超级置顶' : '置顶会话';
-                  return (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onTogglePin(g.id, next);
-                      }}
-                      title={pinTitle}
-                      className={`flex-shrink-0 p-1 rounded ${pinColor}`}
-                    >
-                      <Pin className="w-3.5 h-3.5" />
-                    </button>
-                  );
-                })()}
+                {!isCollapsed && (
+                  <div>
+                    {section.groups.map(renderGroup)}
+                    {section.groups.length === 0 && (
+                      <div className="py-2 text-center text-xs text-gray-400">暂无群聊</div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })
@@ -253,6 +428,74 @@ export const Sidebar = ({
           </button>
         </div>
       </div>
+
+      {modal && createPortal(
+        <div className="fixed inset-0 z-[100] bg-black bg-opacity-50 flex items-center justify-center p-4" onClick={closeModal}>
+          <div
+            className={`w-full max-w-sm rounded-2xl shadow-xl p-5 ${isDarkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-800'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold">
+                {modal.type === 'category' ? (modal.category ? '重命名分组' : '新建分组') : '移动到分组'}
+              </h3>
+              <button onClick={closeModal} className="p-1 text-gray-400 hover:text-gray-600 rounded-lg" title="关闭">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {modal.type === 'category' ? (
+              <form onSubmit={(e) => { e.preventDefault(); void saveCategory(); }}>
+                <input
+                  autoFocus
+                  value={categoryName}
+                  onChange={(e) => setCategoryName(e.target.value.slice(0, 20))}
+                  maxLength={20}
+                  placeholder="例如：读书笔记"
+                  className={`w-full px-3 py-2.5 rounded-xl border outline-none focus:ring-2 focus:ring-green-500 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'}`}
+                />
+                <div className="text-xs text-gray-400 mt-1.5 text-right">{categoryName.length}/20</div>
+                {modalError && <p className="text-sm text-red-500 mt-2">{modalError}</p>}
+                <div className="flex justify-end gap-2 mt-5">
+                  <button type="button" onClick={closeModal} className={`px-4 py-2 text-sm rounded-xl ${isDarkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>取消</button>
+                  <button type="submit" disabled={busy} className="px-4 py-2 text-sm rounded-xl bg-green-500 text-white hover:bg-green-600 disabled:opacity-50">
+                    {busy ? '保存中…' : '保存'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div>
+                <p className="text-sm text-gray-400 mb-3 truncate">
+                  {modal.group.is_dm === 1 ? modal.group.dm_peer?.nickname : modal.group.remark || modal.group.name}
+                </p>
+                <div className="max-h-[50vh] overflow-y-auto space-y-1">
+                  {[{ id: 0, name: '常用', pinned: 0, created_at: '' }, ...categories].map((category) => {
+                    const selected = (modal.group.category_id || 0) === category.id;
+                    return (
+                      <button
+                        key={category.id}
+                        disabled={busy}
+                        onClick={() => void moveToCategory(category.id)}
+                        className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm text-left disabled:opacity-50 ${
+                          selected
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                            : isDarkMode ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        <Folder className="w-4 h-4 flex-shrink-0" />
+                        <span className="flex-1 truncate">{category.name}</span>
+                        {selected && <Check className="w-4 h-4 text-green-500" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                {modalError && <p className="text-sm text-red-500 mt-3">{modalError}</p>}
+                {busy && <p className="text-sm text-gray-400 mt-3 text-center">移动中…</p>}
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 };

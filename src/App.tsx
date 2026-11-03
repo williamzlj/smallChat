@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Menu, X, Info, Hash, Search, ListTodo, Pin, MessageCircle, Flag, CheckCheck, Megaphone, ArrowLeft, Wallet, Banknote, ChevronDown, Check, ChevronsDown, History } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { AvatarCropModal } from './components/AvatarCropModal';
@@ -189,7 +189,7 @@ export default function App() {
     else localStorage.removeItem(GROUP_KEY);
   }, [currentGroupId]);
 
-  const { groups, loading: groupsLoading, create, refresh: refreshGroups } = useGroups();
+  const { groups, categories, loading: groupsLoading, create, refresh: refreshGroups } = useGroups();
   const currentGroup = useMemo(
     () => groups.find((g) => g.id === currentGroupId) || null,
     [groups, currentGroupId],
@@ -746,6 +746,7 @@ export default function App() {
             <Sidebar
               user={user}
               groups={groups}
+              categories={categories}
               currentGroupId={currentGroupId}
               view={view}
               onSelectGroup={selectGroup}
@@ -769,6 +770,25 @@ export default function App() {
               onChangeAvatar={() => setCropOpen(true)}
               onTogglePin={(groupId, pinned) => {
                 void api.groupsSetPin(groupId, pinned).then(() => refreshGroups());
+              }}
+              onCreateCategory={async (name) => {
+                await api.groupsCategoryCreate(name);
+                await refreshGroups();
+              }}
+              onRenameCategory={async (categoryId, name) => {
+                await api.groupsCategoryRename(categoryId, name);
+                await refreshGroups();
+              }}
+              onDeleteCategory={async (categoryId) => {
+                await api.groupsCategoryDelete(categoryId);
+                await refreshGroups();
+              }}
+              onToggleCategoryPin={(categoryId, pinned) => {
+                void api.groupsCategoryPin(categoryId, pinned).then(() => refreshGroups());
+              }}
+              onSetGroupCategory={async (groupId, categoryId) => {
+                await api.groupsSetCategory(groupId, categoryId);
+                await refreshGroups();
               }}
               isDarkMode={isDarkMode}
               onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}

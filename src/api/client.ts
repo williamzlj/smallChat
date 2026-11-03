@@ -1,7 +1,7 @@
 // 后端 API 封装：单入口 api.php?action=xxx
 // 景安主机会剥离 Authorization 头，统一使用 X-Auth-Token 自定义头
 import { API_BASE } from '../config';
-import { User, Group, GroupMember, ChatMessage, TokenInfo, Friend, FriendInfo, SearchResult, ReadState, CrossGroupMessage, Category, LedgerData, LedgerDetail } from './types';
+import { User, Group, GroupCategory, GroupMember, ChatMessage, TokenInfo, Friend, FriendInfo, SearchResult, ReadState, CrossGroupMessage, Category, LedgerData, LedgerDetail } from './types';
 
 const TOKEN_KEY = 'smallchat-token';
 const USER_KEY = 'smallchat-user';
@@ -139,7 +139,7 @@ export const api = {
 
   // ==================== 群组 ====================
 
-  groupsList: () => get<{ groups: Group[] }>('groups.list'),
+  groupsList: () => get<{ groups: Group[]; categories: GroupCategory[] }>('groups.list'),
   groupsCreate: (name: string) => post<{ id: number }>('groups.create', { name }),
   groupsRename: (group_id: number, name: string) =>
     post('groups.rename', { group_id, name }),
@@ -176,6 +176,17 @@ export const api = {
   // 会话置顶：当前用户自己对该群/会话的置顶（多设备同步）
   groupsSetPin: (group_id: number, pinned: number) =>
     post<{ pinned_chat: number }>('groups.setPin', { group_id, pinned }),
+  // 群分组：当前用户私有，多设备同步；category_id=0 表示未分组
+  groupsCategoryCreate: (name: string) =>
+    post<{ id: number }>('groups.categoryCreate', { name }),
+  groupsCategoryRename: (category_id: number, name: string) =>
+    post('groups.categoryRename', { category_id, name }),
+  groupsCategoryDelete: (category_id: number) =>
+    post('groups.categoryDelete', { category_id }),
+  groupsCategoryPin: (category_id: number, pinned: number) =>
+    post<{ pinned: number }>('groups.categoryPin', { category_id, pinned }),
+  groupsSetCategory: (group_id: number, category_id: number) =>
+    post<{ category_id: number }>('groups.setCategory', { group_id, category_id }),
 
   // ==================== 好友与私聊 ====================
 

@@ -1,17 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../api/client';
-import { Group } from '../api/types';
+import { Group, GroupCategory } from '../api/types';
 
 // 我的群组列表
 export const useGroups = () => {
   const [groups, setGroups] = useState<Group[]>([]);
+  const [categories, setCategories] = useState<GroupCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const { groups: list } = await api.groupsList();
+      const { groups: list, categories: categoryList } = await api.groupsList();
       setGroups(list);
+      setCategories(categoryList || []);
     } catch (e) {
       // 静默失败（网络波动时保留下次重试）
       console.warn('刷新群列表失败', e);
@@ -78,5 +80,5 @@ export const useGroups = () => {
     [refresh],
   );
 
-  return { groups, loading, refresh, create, rename, invite, setRole, leave, remove };
+  return { groups, categories, loading, refresh, create, rename, invite, setRole, leave, remove };
 };
