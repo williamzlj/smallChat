@@ -264,6 +264,8 @@ const MAX_TITLES = 6;
 type DatePos = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 // 标题对齐：居中（默认）/ 左对齐（左侧改用主题色竖线替代双引号）
 type TitleAlign = 'center' | 'left';
+// 正文对齐：左对齐（默认）/ 居中 / 右对齐
+type BodyAlign = 'left' | 'center' | 'right';
 const loadStyle = (): {
   theme: CardTheme;
   fontSize: number;
@@ -277,6 +279,7 @@ const loadStyle = (): {
   showTitle: boolean; // 卡片是否显示顶部标题
   datePos: DatePos; // 日期显示位置
   titleAlign: TitleAlign; // 标题对齐方式
+  bodyAlign: BodyAlign; // 正文对齐方式
   titleSize: number; // 标题字号（与正文字号解耦）
   titleColor?: string; // 标题颜色（#RRGGBB）；缺省按卡片底色自动取黑/白
   bodyColor?: string; // 正文字色（#RRGGBB）；缺省表示跟随主题
@@ -326,6 +329,8 @@ const loadStyle = (): {
                 : 'bottom-left';
         // 标题对齐：缺省居中
         const titleAlign: TitleAlign = s.titleAlign === 'left' ? 'left' : 'center';
+        // 正文对齐：缺省左对齐
+        const bodyAlign: BodyAlign = s.bodyAlign === 'center' || s.bodyAlign === 'right' ? s.bodyAlign : 'left';
         // 标题字号/颜色：与正文解耦；老数据按「正文×1.6（上限32）」和主题色迁移，保证观感不变
         const titleSize = Number.isInteger(s.titleSize) && s.titleSize >= TITLE_MIN && s.titleSize <= TITLE_MAX
           ? s.titleSize
@@ -356,6 +361,7 @@ const loadStyle = (): {
           showTitle: s.showTitle !== false,
           datePos,
           titleAlign,
+          bodyAlign,
           titleSize,
           titleColor,
           bodyColor,
@@ -380,7 +386,7 @@ const loadStyle = (): {
   } catch {
     // 损坏数据按默认处理
   }
-  return { theme: 'light', fontSize: 16, fontKey: 'default', padKey: 'standard', bold: false, showDate: true, showSignature: true, showNickname: true, showQuote: true, showTitle: true, datePos: 'bottom-left', titleAlign: 'center', titleSize: 26 };
+  return { theme: 'light', fontSize: 16, fontKey: 'default', padKey: 'standard', bold: false, showDate: true, showSignature: true, showNickname: true, showQuote: true, showTitle: true, datePos: 'bottom-left', titleAlign: 'center', bodyAlign: 'left', titleSize: 26 };
 };
 
 const isMobile = () => /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -512,6 +518,7 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
     width: 356,
     maxWidth: '100%',
     borderWidth: 0,
+    textAlign: style.bodyAlign,
     wordBreak: 'break-all', // 与卡片正文 break-all 同规则，标点/单词断行位置一致
   };
   // 编辑框外的灰色衬底：与卡片预览灰框完全同款同行为（w-[380px] max-w-full p-3），弹窗里复刻「灰框包白卡」结构；
@@ -786,6 +793,7 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
       titleSize: 26,
       titleColor: undefined,
       titleAlign: 'center',
+      bodyAlign: 'left',
       bodyColor: undefined,
       dateSize: undefined,
       dateColor: undefined,
@@ -1304,7 +1312,7 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
                                 {
                                   color: style.bodyColor ?? t.text,
                                   fontWeight: style.bold ? 700 : 400,
-                                  textAlign: 'left',
+                                  textAlign: style.bodyAlign,
                                   textIndent: 0,
                                   hangingPunctuation: 'none',
                                   WebkitPunctuationTrim: 'none',
@@ -1325,10 +1333,7 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
                           color: style.bodyColor ?? t.text,
                           marginTop: 10,
                           fontWeight: style.bold ? 700 : 400,
-                          // 小屏左对齐修复：WebKit 默认对行首全角标点做标点压缩（-webkit-punctuation-trim: start），
-                          // 正文首字符是逗号/句号等标点时会被缩成半角宽度并向左悬挂，与后续行文字左边缘不齐；
-                          // 显式关闭标点压缩与标点悬挂（hanging-punctuation），任何屏宽下首字符与后续行左对齐
-                          textAlign: 'left',
+                          textAlign: style.bodyAlign,
                           textIndent: 0,
                           hangingPunctuation: 'none',
                           WebkitPunctuationTrim: 'none',
@@ -1733,6 +1738,16 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
                     <p className={`mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                       「默认」= 跟随当前卡片主题的正文颜色
                     </p>
+                  </div>
+                  {/* 正文对齐：左对齐（默认）/ 居中 / 右对齐 */}
+                  <div className="mb-3">
+                    <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>正文对齐</span>
+                    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                      {optBtn(style.bodyAlign === 'left', () => setStyle((s) => ({ ...s, bodyAlign: 'left' })), '左对齐')}
+                      {optBtn(style.bodyAlign === 'center', () => setStyle((s) => ({ ...s, bodyAlign: 'center' })), '居中')}
+                      {optBtn(style.bodyAlign === 'right', () => setStyle((s) => ({ ...s, bodyAlign: 'right' })), '右对齐')}
+                      {resetBtn(style.bodyAlign === 'left', () => setStyle((s) => ({ ...s, bodyAlign: 'left' })), '恢复默认对齐方式（左对齐）')}
+                    </div>
                   </div>
                   {isMulti ? (
                   textMsgs.length > 0 ? (
