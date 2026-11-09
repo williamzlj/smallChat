@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Settings, Moon, Sun, Users, Hash, Search, ListTodo, Flag, Pin, ChevronDown, ChevronRight, Folder, FolderPlus, FolderInput, FolderCog, Pencil, Trash2, Check, X } from 'lucide-react';
+import { Plus, Settings, Moon, Sun, Users, Hash, Search, ListTodo, Flag, Pin, ChevronDown, ChevronRight, Folder, FolderPlus, FolderInput, FolderCog, Pencil, Trash2, Check, X, LogOut } from 'lucide-react';
 import { User, Group, GroupCategory } from '../api/types';
 import { Avatar } from './Avatar';
 
@@ -28,6 +28,7 @@ interface SidebarProps {
   onDeleteCategory: (categoryId: number) => Promise<void>;
   onToggleCategoryPin: (categoryId: number, pinned: number) => void;
   onSetGroupCategory: (groupId: number, categoryId: number) => Promise<void>;
+  onLogout: () => void;
   isDarkMode: boolean;
   onToggleDarkMode: () => void;
 }
@@ -50,6 +51,7 @@ export const Sidebar = ({
   onDeleteCategory,
   onToggleCategoryPin,
   onSetGroupCategory,
+  onLogout,
   isDarkMode,
   onToggleDarkMode,
 }: SidebarProps) => {
@@ -406,6 +408,19 @@ export const Sidebar = ({
             </p>
             <p className="text-xs text-gray-400 truncate">@{user.username}</p>
           </div>
+          {/* 快速退出登录 */}
+          <button
+            onClick={() => {
+              if (confirm('确定退出登录吗？')) onLogout();
+            }}
+            className={`flex-shrink-0 p-2 rounded-lg transition-colors ${
+              isDarkMode ? 'text-gray-400 hover:text-red-400 hover:bg-gray-600' : 'text-gray-400 hover:text-red-500 hover:bg-gray-200'
+            }`}
+            title="退出登录"
+            aria-label="退出登录"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
         </div>
         <div className="flex items-center justify-between px-1">
           <button

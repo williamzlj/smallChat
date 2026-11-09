@@ -124,7 +124,7 @@ export const api = {
 
   me: () => get<{ user: User; device_name: string }>('me'),
 
-  updateProfile: (data: { nickname?: string; color?: string; signature?: string; card_signature?: string; old_password?: string; new_password?: string }) =>
+  updateProfile: (data: { nickname?: string; color?: string; signature?: string; card_signature?: string; private_note?: string; old_password?: string; new_password?: string }) =>
     post<{ user: User }>('user.update', data),
 
   // 上传头像（base64，前端已裁剪压缩为 256x256 JPEG）

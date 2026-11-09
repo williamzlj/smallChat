@@ -12,6 +12,7 @@ import {
   ChevronDown,
   MessagesSquare,
   ExternalLink,
+  Info,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { CrossGroupMessage, GroupRole } from '../api/types';
@@ -87,6 +88,15 @@ export const TodoPanel = ({ isDarkMode, fontSize, hintFontSize, currentUserId, o
   const [msgNoteEdit, setMsgNoteEdit] = useState<CrossGroupMessage | null>(null);
   // 上下文弹窗
   const [contextMsg, setContextMsg] = useState<CrossGroupMessage | null>(null);
+  // 待办说明弹窗
+  const [showTodoHelp, setShowTodoHelp] = useState(false);
+  // 待办备注：仅保存在本浏览器（localStorage），方便用户自己记录待办使用约定
+  const TODO_NOTE_KEY = 'smallchat-todo-usage-note';
+  const [todoUsageNote, setTodoUsageNote] = useState(() => localStorage.getItem(TODO_NOTE_KEY) || '');
+  const onTodoUsageNoteChange = (v: string) => {
+    setTodoUsageNote(v);
+    localStorage.setItem(TODO_NOTE_KEY, v);
+  };
   // 月历视图：月份、选中日期、列表/月历切换、窄屏判定（手机只显示圆点）
   const [calMonth, setCalMonth] = useState(todayStr.slice(0, 7));
   const [calDate, setCalDate] = useState(todayStr);
@@ -867,6 +877,13 @@ export const TodoPanel = ({ isDarkMode, fontSize, hintFontSize, currentUserId, o
         <div className="flex items-center flex-shrink-0">
           {exportMsg && <span className="text-sm text-green-600 mr-1">{exportMsg}</span>}
           <button
+            onClick={() => setShowTodoHelp(true)}
+            className={`p-2 rounded-lg ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}
+            title="待办说明"
+          >
+            <Info className="w-5 h-5" />
+          </button>
+          <button
             onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
             className={`p-2 rounded-lg ${selectMode ? 'bg-green-100 text-green-600' : isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}
             title={selectMode ? '退出多选' : '多选合并复制'}
@@ -1050,6 +1067,89 @@ export const TodoPanel = ({ isDarkMode, fontSize, hintFontSize, currentUserId, o
         )}
       </div>
       {menuEl}
+      {/* 待办说明：分类方法 + 圆点符号含义，附本浏览器保存的「待办备注」 */}
+      {showTodoHelp && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-[95] p-4"
+          onClick={() => setShowTodoHelp(false)}
+        >
+          <div
+            className={`rounded-2xl shadow-xl w-full max-w-sm max-h-[85vh] overflow-y-auto ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={`flex items-center justify-between p-4 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+              <h3 className={`text-base font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>待办说明</h3>
+              <button
+                onClick={() => setShowTodoHelp(false)}
+                className={`p-1.5 rounded-lg ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-400 hover:bg-gray-100'}`}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-4">
+              <div>
+                <p className={`text-sm font-medium mb-1.5 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>分类方法</p>
+                <ul className={`text-xs space-y-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <li>· 未完成待办：还在处理中的事项（「未完成」页签）</li>
+                  <li>· 已完成待办：已经完成的事项（「已完成」页签）</li>
+                  <li>· 无提醒待办：未设置提醒时间的待办，只在待办列表里显示</li>
+                  <li>· 有提醒待办：设置了到点提醒的待办，在「提醒月历」中显示</li>
+                  <li>· 未到期待办：提醒时间还没到的待办（「未到期提醒」页签）</li>
+                  <li>· 已到期待办：提醒时间已过的待办（「已到期提醒」页签）</li>
+                  <li>· 未归档待办：默认展示的待办；</li>
+                  <li>· 已归档待办：归档后默认隐藏，不可见，点「查看已归档」可显示</li>
+                </ul>
+              </div>
+              <div>
+                <p className={`text-sm font-medium mb-1.5 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>颜色和符号</p>
+                <ul className={`text-xs space-y-1.5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  <li className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-500 flex-shrink-0" />
+                    蓝色实心圆：未到期（已设提醒、时间未到）
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" />
+                    红色实心圆：已到期（未完成且提醒时间已过）
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" />
+                    绿色实心圆：已完成
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-gray-400 dark:bg-gray-500 flex-shrink-0" />
+                    灰色实心圆：已归档的已完成待办
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full border-2 border-gray-400 dark:border-gray-500 bg-transparent flex-shrink-0" />
+                    灰色空心圆：已归档的未完成待办
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full border-2 border-amber-500 bg-transparent flex-shrink-0" />
+                    橘黄空心圆：未设置提醒的未完成待办
+                  </li>
+                </ul>
+              </div>
+              {/* 待办备注：只存在本浏览器，不上传服务器，供用户自己记录约定 */}
+              <div className={`pt-2 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                <label className={`block text-xs mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  待办备注（仅本浏览器可见）
+                </label>
+                <textarea
+                  value={todoUsageNote}
+                  onChange={(e) => onTodoUsageNoteChange(e.target.value)}
+                  rows={3}
+                  placeholder="记录自己的待办使用约定，例如：每天下班前清理已到期的提醒"
+                  className={`w-full text-sm rounded-lg px-3 py-2 resize-none outline-none border ${
+                    isDarkMode
+                      ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-amber-500'
+                      : 'bg-gray-50 border-gray-200 text-gray-700 placeholder-gray-400 focus:border-amber-500'
+                  }`}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {/* 待办备注编辑弹窗：与「设为待办」弹窗共用一套界面（含快速时长文本按钮） */}
       {noteEdit && (
         <TodoNoteModal

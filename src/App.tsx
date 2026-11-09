@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Menu, X, Info, Hash, Search, ListTodo, Pin, MessageCircle, Flag, CheckCheck, Megaphone, ArrowLeft, Wallet, Banknote, ChevronDown, Check, ChevronsDown, History } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { AvatarCropModal } from './components/AvatarCropModal';
@@ -472,6 +472,19 @@ export default function App() {
     }
   };
 
+  // 待办备注弹窗里点「标记为已完成」：直接保存为已完成待办（事情已做完补流程，省去保存后再标记）
+  const handleTodoNoteSaveDone = async (note: string) => {
+    const cur = todoNoteEdit;
+    if (!cur) return;
+    setTodoNoteEdit(null);
+    try {
+      await setTodoStatus(cur.msg.id, 2, note);
+      showToast('已标记为已完成');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '操作失败');
+    }
+  };
+
   // 待办备注弹窗里点「设置提醒」：先保存备注（设为待办时一并提交状态），再打开到点提醒编辑
   const handleTodoNoteSetDue = async (note: string) => {
     const cur = todoNoteEdit;
@@ -790,6 +803,7 @@ export default function App() {
                 await api.groupsSetCategory(groupId, categoryId);
                 await refreshGroups();
               }}
+              onLogout={logout}
               isDarkMode={isDarkMode}
               onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
             />
@@ -1392,6 +1406,8 @@ export default function App() {
           title={todoNoteEdit.msg.todo_status === 0 ? '设为待办事项' : '修改待办备注'}
           initialNote={todoNoteEdit.msg.todo_note ?? ''}
           onSave={handleTodoNoteSave}
+          // 仅「设为待办事项」时提供：补流程场景直接存为已完成，省去保存后再标记
+          onSaveDone={todoNoteEdit.msg.todo_status === 0 ? handleTodoNoteSaveDone : undefined}
           // 仅未完成待办可设到点提醒（后端限制 todo_status=1）
           onSetDue={todoNoteEdit.status === 1 ? handleTodoNoteSetDue : undefined}
           onClose={() => setTodoNoteEdit(null)}

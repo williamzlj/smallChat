@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect } from 'react';
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { useState, useEffect } from 'react';
 import { X, LogOut, Minus, Plus, Monitor, Trash2, Check, Camera, RefreshCw, Copy } from 'lucide-react';
 import { User, TokenInfo } from '../../api/types';
 import { api } from '../../api/client';
@@ -25,6 +25,7 @@ interface Props {
     nickname?: string;
     color?: string;
     signature?: string;
+    privateNote?: string;
     oldPassword?: string;
     newPassword?: string;
   }) => Promise<AuthResult>;
@@ -37,6 +38,12 @@ const COLORS = [
   '#0FDC78', '#3B82F6', '#F59E0B', '#EC4899',
   '#8B5CF6', '#14B8A6', '#F97316', '#EF4444',
 ];
+
+// 设置分区标签：资料 / 偏好 / 账号 / 订阅，避免长页上下滚动
+type SettingsTab = 'profile' | 'prefs' | 'account' | 'calendar';
+
+// 分区操作反馈提示（成功/失败），显示在对应按钮下方
+type SectionMsg = { ok: boolean; text: string } | null;
 
 export const ProfileSettings = ({
   user,
@@ -57,14 +64,17 @@ export const ProfileSettings = ({
   onLogout,
   onClose,
 }: Props) => {
+  const [tab, setTab] = useState<SettingsTab>('profile');
   const [nickname, setNickname] = useState(user.nickname);
   const [color, setColor] = useState(user.color);
   const [signature, setSignature] = useState(user.signature || '');
+  // 个人备注：仅本人可见的账号备忘，保存在服务器
+  const [privateNote, setPrivateNote] = useState(user.private_note || '');
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [profileMsg, setProfileMsg] = useState<SectionMsg>(null);
+  const [pwdMsg, setPwdMsg] = useState<SectionMsg>(null);
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [cropOpen, setCropOpen] = useState(false);
@@ -104,13 +114,13 @@ export const ProfileSettings = ({
   const profileChanged =
     nickname.trim() !== user.nickname ||
     color !== user.color ||
-    signature.trim() !== (user.signature || '');
+    signature.trim() !== (user.signature || '') ||
+    privateNote.trim() !== (user.private_note || '');
 
   const saveProfile = async () => {
-    setError('');
-    setSuccess('');
+    setProfileMsg(null);
     if (!nickname.trim()) {
-      setError('昵称不能为空');
+      setProfileMsg({ ok: false, text: '昵称不能为空' });
       return;
     }
     setBusy(true);
@@ -118,37 +128,37 @@ export const ProfileSettings = ({
       nickname: nickname.trim() !== user.nickname ? nickname.trim() : undefined,
       color: color !== user.color ? color : undefined,
       signature: signature.trim() !== (user.signature || '') ? signature.trim() : undefined,
+      privateNote: privateNote.trim() !== (user.private_note || '') ? privateNote.trim() : undefined,
     });
     setBusy(false);
-    if (r.success) setSuccess('资料已保存');
-    else setError(r.message);
+    if (r.success) setProfileMsg({ ok: true, text: '资料已保存' });
+    else setProfileMsg({ ok: false, text: r.message });
   };
 
   const changePassword = async () => {
-    setError('');
-    setSuccess('');
+    setPwdMsg(null);
     if (!oldPassword || !newPassword) {
-      setError('请填写原密码和新密码');
+      setPwdMsg({ ok: false, text: '请填写原密码和新密码' });
       return;
     }
     if (newPassword.length < 6) {
-      setError('新密码至少 6 位');
+      setPwdMsg({ ok: false, text: '新密码至少 6 位' });
       return;
     }
     if (newPassword !== confirmPwd) {
-      setError('两次输入的新密码不一致');
+      setPwdMsg({ ok: false, text: '两次输入的新密码不一致' });
       return;
     }
     setBusy(true);
     const r = await onUpdate({ oldPassword, newPassword });
     setBusy(false);
     if (r.success) {
-      setSuccess('密码已修改，其他设备已下线');
+      setPwdMsg({ ok: true, text: '密码已修改，其他设备已下线' });
       setOldPassword('');
       setNewPassword('');
       setConfirmPwd('');
     } else {
-      setError(r.message);
+      setPwdMsg({ ok: false, text: r.message });
     }
   };
 
@@ -170,10 +180,22 @@ export const ProfileSettings = ({
   const inputCls =
     'w-full px-4 py-2.5 text-base border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-green-500';
 
+  const sectionMsg = (msg: SectionMsg) =>
+    msg && (
+      <p className={`text-sm ${msg.ok ? 'text-green-600' : 'text-red-500'}`}>{msg.text}</p>
+    );
+
+  const tabBtn = (active: boolean) =>
+    `py-2 text-sm rounded-lg transition-colors ${
+      active
+        ? 'bg-green-500 text-white font-medium'
+        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+    }`;
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
+        <div className="flex items-center justify-between p-5 pb-3 flex-shrink-0">
           <div>
             <h2 className="text-lg font-bold text-gray-800 dark:text-white">设置</h2>
             <p className="text-xs text-gray-400 mt-0.5">@{user.username}</p>
@@ -186,349 +208,381 @@ export const ProfileSettings = ({
           </button>
         </div>
 
+        {/* 顶部分区标签 */}
+        <div className="px-5 pb-3 grid grid-cols-4 gap-1.5 flex-shrink-0 border-b border-gray-100 dark:border-gray-700">
+          <button onClick={() => setTab('profile')} className={tabBtn(tab === 'profile')}>个人资料</button>
+          <button onClick={() => setTab('prefs')} className={tabBtn(tab === 'prefs')}>界面偏好</button>
+          <button onClick={() => setTab('account')} className={tabBtn(tab === 'account')}>账号安全</button>
+          <button onClick={() => setTab('calendar')} className={tabBtn(tab === 'calendar')}>日历订阅</button>
+        </div>
+
         <div className="p-5 overflow-y-auto space-y-6">
-          {/* 资料 */}
-          <section className="space-y-4">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">个人资料</h3>
-            {/* 头像：大号头像居中，按钮另起一行 */}
-            <div className="flex flex-col items-center space-y-2.5">
-              <Avatar
-                userId={user.id}
-                nickname={user.nickname}
-                color={user.color}
-                avatarVer={user.avatar_ver}
-                size={80}
-                onClick={() => setCropOpen(true)}
-                className="ring-2 ring-gray-200 dark:ring-gray-600"
-              />
-              <button
-                onClick={() => setCropOpen(true)}
-                className="flex items-center space-x-1.5 px-3 py-1.5 text-sm rounded-lg bg-green-500 text-white hover:bg-green-600"
-              >
-                <Camera className="w-4 h-4" />
-                <span>更换头像</span>
-              </button>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">昵称</label>
-              <input
-                type="text"
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                maxLength={20}
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">
-                签名
-                <span className="text-xs text-gray-400 ml-2">{signature.length}/500，好友查看你的信息时可见</span>
-              </label>
-              <textarea
-                value={signature}
-                onChange={(e) => setSignature(e.target.value.slice(0, 500))}
-                rows={3}
-                placeholder="介绍一下自己吧"
-                className={`${inputCls} resize-none`}
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">名字颜色</label>
-              <div className="flex flex-wrap gap-2">
-                {COLORS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setColor(c)}
-                    className={`w-9 h-9 rounded-full transition-transform ${
-                      color === c ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : 'hover:scale-110'
-                    }`}
-                    style={{ backgroundColor: c }}
-                    title={c}
-                  >
-                    {color === c && <Check className="w-4 h-4 text-white mx-auto" />}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button
-              onClick={saveProfile}
-              disabled={busy || !profileChanged}
-              className="w-full py-2.5 rounded-xl text-sm font-medium bg-green-500 text-white hover:bg-green-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              保存资料
-            </button>
-          </section>
-
-          {/* 字号：消息与提示分开设置，互不影响 */}
-          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">消息字号</h3>
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={() => onFontSizeChange(Math.max(14, fontSize - 1))}
-                className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
-              >
-                <Minus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-              <div className="flex-1 bg-gray-50 dark:bg-gray-700/60 rounded-lg px-4 py-2.5 text-center text-base font-medium text-gray-800 dark:text-gray-200">
-                {fontSize}px
-              </div>
-              <button
-                onClick={() => onFontSizeChange(Math.min(28, fontSize + 1))}
-                className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
-              >
-                <Plus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-            </div>
-            <p className="text-xs text-gray-400">范围 14px - 28px，仅保存在本设备</p>
-          </section>
-
-          {/* 提示字号：时间、备注、引用、待办标记等辅助文字，独立于消息字号 */}
-          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">提示字号</h3>
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={() => onHintFontSizeChange(Math.max(12, hintFontSize - 1))}
-                className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
-              >
-                <Minus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-              <div className="flex-1 bg-gray-50 dark:bg-gray-700/60 rounded-lg px-4 py-2.5 text-center text-base font-medium text-gray-800 dark:text-gray-200">
-                {hintFontSize}px
-              </div>
-              <button
-                onClick={() => onHintFontSizeChange(Math.min(20, hintFontSize + 1))}
-                className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
-              >
-                <Plus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              </button>
-            </div>
-            <p className="text-xs text-gray-400">用于时间、备注、引用等辅助文字，范围 12px - 20px，不随消息字号变化</p>
-          </section>
-
-          {/* 我的气泡样式：两个预览小块单选，与字号一样仅保存在本设备 */}
-          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">我的气泡样式</h3>
-            <div className="flex gap-3">
-              <button
-                onClick={() => onBubbleStyleChange('green')}
-                className={`flex-1 rounded-xl p-3 bg-gray-50 dark:bg-gray-700/60 transition-shadow ${
-                  bubbleStyle === 'green' ? 'ring-2 ring-green-500' : 'ring-1 ring-gray-200 dark:ring-gray-600 hover:ring-gray-300'
-                }`}
-                title="自己发的消息显示为绿底白字"
-              >
-                <span className="block ml-auto w-fit max-w-full px-3 py-1.5 rounded-lg rounded-br-md bg-green-500 text-white text-sm shadow-sm">
-                  你好
-                </span>
-                <span className="block mt-2 text-center text-sm text-gray-600 dark:text-gray-300">经典绿底</span>
-              </button>
-              <button
-                onClick={() => onBubbleStyleChange('white')}
-                className={`flex-1 rounded-xl p-3 bg-gray-50 dark:bg-gray-700/60 transition-shadow ${
-                  bubbleStyle === 'white' ? 'ring-2 ring-green-500' : 'ring-1 ring-gray-200 dark:ring-gray-600 hover:ring-gray-300'
-                }`}
-                title="自己发的消息与对方一样白底黑字"
-              >
-                <span className="block ml-auto w-fit max-w-full px-3 py-1.5 rounded-lg rounded-br-md bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 text-sm shadow-sm">
-                  你好
-                </span>
-                <span className="block mt-2 text-center text-sm text-gray-600 dark:text-gray-300">简洁白底</span>
-              </button>
-            </div>
-            <p className="text-xs text-gray-400">仅改变本设备显示，不影响其他成员</p>
-          </section>
-
-          {/* 发送消息模式：默认 Enter 换行防误发；需要快速发送时可切换为 Enter 发送 */}
-          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">发送消息</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => onEnterToSendChange(false)}
-                className={`px-3 py-2.5 rounded-lg border text-center transition-colors ${
-                  !enterToSend
-                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                    : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="block text-sm font-medium">Enter 换行</span>
-                <span className="block text-xs mt-0.5 opacity-80">Ctrl+Enter 发送</span>
-              </button>
-              <button
-                onClick={() => onEnterToSendChange(true)}
-                className={`px-3 py-2.5 rounded-lg border text-center transition-colors ${
-                  enterToSend
-                    ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                    : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
-                }`}
-              >
-                <span className="block text-sm font-medium">Enter 发送</span>
-                <span className="block text-xs mt-0.5 opacity-80">Ctrl+Enter 换行</span>
-              </button>
-            </div>
-            <p className="text-xs text-gray-400">仅电脑端键盘生效，仅保存在本设备；快速模式下 Shift+Enter 也可换行</p>
-          </section>
-
-          {/* 长消息折叠：超过设定字数的消息默认折叠 6 行，点击可展开；仅本设备生效。0=不折叠 */}
-          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">长消息折叠字数</h3>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min={0}
-                max={9999}
-                value={foldLen}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  onFoldLenChange(Number.isFinite(v) && v >= 0 ? v : 0);
-                }}
-                className={`w-28 px-3 py-1.5 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-green-500 ${
-                  isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'
-                }`}
-              />
-              <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>字（0 = 不折叠）</span>
-            </div>
-            <p className="text-xs text-gray-400">超过这个字数的消息默认折叠 6 行，点击「展开全文」可查看；仅对本设备生效</p>
-          </section>
-
-          {/* 设为待办时弹出备注窗口：可快速输入预计时长；仅本设备 */}
-          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">弹出待办备注窗口</h3>
-            <label className="flex items-center gap-3 cursor-pointer select-none w-fit">
-              <input
-                type="checkbox"
-                checked={todoNotePopup}
-                onChange={(e) => onTodoNotePopupChange(e.target.checked)}
-                className="w-4 h-4 accent-green-500"
-              />
-              <span className="text-sm text-gray-700 dark:text-gray-200">设为待办时弹出备注窗口（可快速输入预计时长）</span>
-            </label>
-            <p className="text-xs text-gray-400">默认关闭；关闭时点「设为待办」立即生效，不弹窗；仅对本设备生效</p>
-          </section>
-
-          {/* 改密码 */}
-          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">修改密码</h3>
-            <input
-              type="password"
-              value={oldPassword}
-              onChange={(e) => setOldPassword(e.target.value)}
-              placeholder="原密码"
-              className={inputCls}
-            />
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="新密码（至少 6 位）"
-              className={inputCls}
-            />
-            <input
-              type="password"
-              value={confirmPwd}
-              onChange={(e) => setConfirmPwd(e.target.value)}
-              placeholder="确认新密码"
-              className={inputCls}
-            />
-            <button
-              onClick={changePassword}
-              disabled={busy}
-              className="w-full py-2.5 rounded-xl text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors disabled:opacity-50"
-            >
-              修改密码
-            </button>
-          </section>
-
-          {/* 设备管理 */}
-          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">登录设备</h3>
-            <div className="space-y-2">
-              {tokens.map((t) => (
-                <div
-                  key={t.token}
-                  className="flex items-center space-x-3 px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-700/40"
+          {/* ===== 个人资料 ===== */}
+          {tab === 'profile' && (
+            <section className="space-y-4">
+              {/* 头像：大号头像居中，按钮另起一行 */}
+              <div className="flex flex-col items-center space-y-2.5">
+                <Avatar
+                  userId={user.id}
+                  nickname={user.nickname}
+                  color={user.color}
+                  avatarVer={user.avatar_ver}
+                  size={80}
+                  onClick={() => setCropOpen(true)}
+                  className="ring-2 ring-gray-200 dark:ring-gray-600"
+                />
+                <button
+                  onClick={() => setCropOpen(true)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 text-sm rounded-lg bg-green-500 text-white hover:bg-green-600"
                 >
-                  <Monitor className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 dark:text-gray-200 truncate">
-                      {t.device_name || '未知设备'}
-                      {t.is_current === 1 && <span className="ml-2 text-sm text-green-600">（本设备）</span>}
-                    </p>
-                    <p className="text-xs text-gray-400">有效期至 {t.expires_at}</p>
-                  </div>
-                  {t.is_current !== 1 && (
+                  <Camera className="w-4 h-4" />
+                  <span>更换头像</span>
+                </button>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">昵称</label>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  maxLength={20}
+                  className={inputCls}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">
+                  签名
+                  <span className="text-xs text-gray-400 ml-2">{signature.length}/500，好友查看你的信息时可见</span>
+                </label>
+                <textarea
+                  value={signature}
+                  onChange={(e) => setSignature(e.target.value.slice(0, 500))}
+                  rows={3}
+                  placeholder="介绍一下自己吧"
+                  className={`${inputCls} resize-none`}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">
+                  个人备注
+                  <span className="text-xs text-gray-400 ml-2">{privateNote.length}/2000，仅自己可见</span>
+                </label>
+                <textarea
+                  value={privateNote}
+                  onChange={(e) => setPrivateNote(e.target.value.slice(0, 2000))}
+                  rows={3}
+                  placeholder="记录给自己看的信息，例如：这个账户用在哪台电脑、喜欢的字号、重要事项等"
+                  className={`${inputCls} resize-none`}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">名字颜色</label>
+                <div className="flex flex-wrap gap-2">
+                  {COLORS.map((c) => (
                     <button
-                      onClick={() => revokeToken(t.token)}
-                      className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600"
-                      title="让该设备下线"
+                      key={c}
+                      onClick={() => setColor(c)}
+                      className={`w-9 h-9 rounded-full transition-transform ${
+                        color === c ? 'ring-2 ring-offset-2 ring-gray-400 scale-110' : 'hover:scale-110'
+                      }`}
+                      style={{ backgroundColor: c }}
+                      title={c}
                     >
-                      <Trash2 className="w-4 h-4" />
+                      {color === c && <Check className="w-4 h-4 text-white mx-auto" />}
                     </button>
-                  )}
+                  ))}
                 </div>
-              ))}
-            </div>
-          </section>
-
-          {/* 日历订阅 */}
-          <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">日历订阅</h3>
-            <p className="text-xs text-gray-400">
-              给待办设置到点提醒后，把下面的链接添加到手机日历（iPhone：日历 → 账户 → 添加订阅日历；
-              安卓：日历 App → 设置 → 添加账号/订阅），到点前 10 分钟会弹系统通知。
-              链接包含你的专属订阅凭证，请勿分享给他人；若怀疑泄露，可点击下方「重置订阅地址」。
-            </p>
-            <div className="flex items-center gap-2">
-              <input
-                readOnly
-                value={icsUrl}
-                placeholder="正在生成订阅地址…"
-                onFocus={(e) => e.target.select()}
-                className={`flex-1 min-w-0 px-3 py-2 rounded-lg border text-xs truncate ${
-                  isDarkMode
-                    ? 'bg-gray-700 border-gray-600 text-gray-300'
-                    : 'bg-gray-50 border-gray-200 text-gray-600'
-                }`}
-              />
+              </div>
               <button
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(icsUrl);
-                    setIcsCopied(true);
-                    setTimeout(() => setIcsCopied(false), 1500);
-                  } catch {
-                    // 剪贴板不可用时忽略
-                  }
-                }}
-                disabled={!icsUrl}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="复制订阅链接"
+                onClick={saveProfile}
+                disabled={busy || !profileChanged}
+                className="w-full py-2.5 rounded-xl text-sm font-medium bg-green-500 text-white hover:bg-green-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Copy className="w-4 h-4" />
-                <span>{icsCopied ? '已复制' : '复制'}</span>
+                保存资料
               </button>
-            </div>
-            <div>
+              {sectionMsg(profileMsg)}
+            </section>
+          )}
+
+          {/* ===== 界面偏好 ===== */}
+          {tab === 'prefs' && (
+            <>
+              {/* 字号：消息与提示分开设置，互不影响 */}
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">消息字号</h3>
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => onFontSizeChange(Math.max(14, fontSize - 1))}
+                    className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
+                  >
+                    <Minus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                  <div className="flex-1 bg-gray-50 dark:bg-gray-700/60 rounded-lg px-4 py-2.5 text-center text-base font-medium text-gray-800 dark:text-gray-200">
+                    {fontSize}px
+                  </div>
+                  <button
+                    onClick={() => onFontSizeChange(Math.min(28, fontSize + 1))}
+                    className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
+                  >
+                    <Plus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400">范围 14px - 28px，仅保存在本设备</p>
+              </section>
+
+              {/* 提示字号：时间、备注、引用、待办标记等辅助文字，独立于消息字号 */}
+              <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">提示字号</h3>
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => onHintFontSizeChange(Math.max(12, hintFontSize - 1))}
+                    className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
+                  >
+                    <Minus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                  <div className="flex-1 bg-gray-50 dark:bg-gray-700/60 rounded-lg px-4 py-2.5 text-center text-base font-medium text-gray-800 dark:text-gray-200">
+                    {hintFontSize}px
+                  </div>
+                  <button
+                    onClick={() => onHintFontSizeChange(Math.min(20, hintFontSize + 1))}
+                    className="w-10 h-10 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg flex items-center justify-center"
+                  >
+                    <Plus className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400">用于时间、备注、引用等辅助文字，范围 12px - 20px，不随消息字号变化</p>
+              </section>
+
+              {/* 我的气泡样式：两个预览小块单选，与字号一样仅保存在本设备 */}
+              <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">我的气泡样式</h3>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => onBubbleStyleChange('green')}
+                    className={`flex-1 rounded-xl p-3 bg-gray-50 dark:bg-gray-700/60 transition-shadow ${
+                      bubbleStyle === 'green' ? 'ring-2 ring-green-500' : 'ring-1 ring-gray-200 dark:ring-gray-600 hover:ring-gray-300'
+                    }`}
+                    title="自己发的消息显示为绿底白字"
+                  >
+                    <span className="block ml-auto w-fit max-w-full px-3 py-1.5 rounded-lg rounded-br-md bg-green-500 text-white text-sm shadow-sm">
+                      你好
+                    </span>
+                    <span className="block mt-2 text-center text-sm text-gray-600 dark:text-gray-300">经典绿底</span>
+                  </button>
+                  <button
+                    onClick={() => onBubbleStyleChange('white')}
+                    className={`flex-1 rounded-xl p-3 bg-gray-50 dark:bg-gray-700/60 transition-shadow ${
+                      bubbleStyle === 'white' ? 'ring-2 ring-green-500' : 'ring-1 ring-gray-200 dark:ring-gray-600 hover:ring-gray-300'
+                    }`}
+                    title="自己发的消息与对方一样白底黑字"
+                  >
+                    <span className="block ml-auto w-fit max-w-full px-3 py-1.5 rounded-lg rounded-br-md bg-white dark:bg-gray-600 text-gray-800 dark:text-gray-100 text-sm shadow-sm">
+                      你好
+                    </span>
+                    <span className="block mt-2 text-center text-sm text-gray-600 dark:text-gray-300">简洁白底</span>
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400">仅改变本设备显示，不影响其他成员</p>
+              </section>
+
+              {/* 发送消息模式：默认 Enter 换行防误发；需要快速发送时可切换为 Enter 发送 */}
+              <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">发送消息</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => onEnterToSendChange(false)}
+                    className={`px-3 py-2.5 rounded-lg border text-center transition-colors ${
+                      !enterToSend
+                        ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                        : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <span className="block text-sm font-medium">Enter 换行</span>
+                    <span className="block text-xs mt-0.5 opacity-80">Ctrl+Enter 发送</span>
+                  </button>
+                  <button
+                    onClick={() => onEnterToSendChange(true)}
+                    className={`px-3 py-2.5 rounded-lg border text-center transition-colors ${
+                      enterToSend
+                        ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                        : 'border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <span className="block text-sm font-medium">Enter 发送</span>
+                    <span className="block text-xs mt-0.5 opacity-80">Ctrl+Enter 换行</span>
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400">仅电脑端键盘生效，仅保存在本设备；快速模式下 Shift+Enter 也可换行</p>
+              </section>
+
+              {/* 长消息折叠：超过设定字数的消息默认折叠 6 行，点击可展开；仅本设备生效。0=不折叠 */}
+              <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">长消息折叠字数</h3>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min={0}
+                    max={9999}
+                    value={foldLen}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      onFoldLenChange(Number.isFinite(v) && v >= 0 ? v : 0);
+                    }}
+                    className={`w-28 px-3 py-1.5 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-green-500 ${
+                      isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'
+                    }`}
+                  />
+                  <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>字（0 = 不折叠）</span>
+                </div>
+                <p className="text-xs text-gray-400">超过这个字数的消息默认折叠 6 行，点击「展开全文」可查看；仅对本设备生效</p>
+              </section>
+
+              {/* 设为待办时弹出备注窗口：可快速输入预计时长；仅本设备 */}
+              <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">弹出待办备注窗口</h3>
+                <label className="flex items-center gap-3 cursor-pointer select-none w-fit">
+                  <input
+                    type="checkbox"
+                    checked={todoNotePopup}
+                    onChange={(e) => onTodoNotePopupChange(e.target.checked)}
+                    className="w-4 h-4 accent-green-500"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-200">设为待办时弹出备注窗口（可快速输入预计时长）</span>
+                </label>
+                <p className="text-xs text-gray-400">默认关闭；关闭时点「设为待办」立即生效，不弹窗；仅对本设备生效</p>
+              </section>
+            </>
+          )}
+
+          {/* ===== 账号安全 ===== */}
+          {tab === 'account' && (
+            <>
+              {/* 改密码：提示紧跟按钮下方，一眼可见 */}
+              <section className="space-y-3">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">修改密码</h3>
+                <input
+                  type="password"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  placeholder="原密码"
+                  className={inputCls}
+                />
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="新密码（至少 6 位）"
+                  className={inputCls}
+                />
+                <input
+                  type="password"
+                  value={confirmPwd}
+                  onChange={(e) => setConfirmPwd(e.target.value)}
+                  placeholder="确认新密码"
+                  className={inputCls}
+                />
+                <button
+                  onClick={changePassword}
+                  disabled={busy}
+                  className="w-full py-2.5 rounded-xl text-sm font-medium bg-blue-500 text-white hover:bg-blue-600 transition-colors disabled:opacity-50"
+                >
+                  修改密码
+                </button>
+                {sectionMsg(pwdMsg)}
+              </section>
+
+              {/* 设备管理 */}
+              <section className="space-y-3 border-t border-gray-100 dark:border-gray-700 pt-5">
+                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">登录设备</h3>
+                <div className="space-y-2">
+                  {tokens.map((t) => (
+                    <div
+                      key={t.token}
+                      className="flex items-center space-x-3 px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-700/40"
+                    >
+                      <Monitor className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-800 dark:text-gray-200 truncate">
+                          {t.device_name || '未知设备'}
+                          {t.is_current === 1 && <span className="ml-2 text-sm text-green-600">（本设备）</span>}
+                        </p>
+                        <p className="text-xs text-gray-400">有效期至 {t.expires_at}</p>
+                      </div>
+                      {t.is_current !== 1 && (
+                        <button
+                          onClick={() => revokeToken(t.token)}
+                          className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600"
+                          title="让该设备下线"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
+
               <button
-                onClick={() => void resetIcs()}
-                disabled={icsBusy || !icsUrl}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-amber-400 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="停用旧地址并生成新地址"
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center space-x-2 py-2.5 rounded-xl text-sm font-medium bg-gray-100 dark:bg-gray-700 text-red-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
               >
-                <RefreshCw className={`w-4 h-4 ${icsBusy ? 'animate-spin' : ''}`} />
-                <span>重置订阅地址</span>
+                <LogOut className="w-4 h-4" />
+                <span>退出登录</span>
               </button>
-            </div>
-          </section>
+            </>
+          )}
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
-          {success && <p className="text-sm text-green-600">{success}</p>}
-
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center space-x-2 py-2.5 rounded-xl text-sm font-medium bg-gray-100 dark:bg-gray-700 text-red-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>退出登录</span>
-          </button>
+          {/* ===== 日历订阅 ===== */}
+          {tab === 'calendar' && (
+            <section className="space-y-3">
+              <p className="text-xs text-gray-400">
+                给待办设置到点提醒后，把下面的链接添加到手机日历（iPhone：日历 → 账户 → 添加订阅日历；
+                安卓：日历 App → 设置 → 添加账号/订阅），到点前 10 分钟会弹系统通知。
+                链接包含你的专属订阅凭证，请勿分享给他人；若怀疑泄露，可点击下方「重置订阅地址」。
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={icsUrl}
+                  placeholder="正在生成订阅地址…"
+                  onFocus={(e) => e.target.select()}
+                  className={`flex-1 min-w-0 px-3 py-2 rounded-lg border text-xs truncate ${
+                    isDarkMode
+                      ? 'bg-gray-700 border-gray-600 text-gray-300'
+                      : 'bg-gray-50 border-gray-200 text-gray-600'
+                  }`}
+                />
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(icsUrl);
+                      setIcsCopied(true);
+                      setTimeout(() => setIcsCopied(false), 1500);
+                    } catch {
+                      // 剪贴板不可用时忽略
+                    }
+                  }}
+                  disabled={!icsUrl}
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="复制订阅链接"
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>{icsCopied ? '已复制' : '复制'}</span>
+                </button>
+              </div>
+              <div>
+                <button
+                  onClick={() => void resetIcs()}
+                  disabled={icsBusy || !icsUrl}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-amber-400 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="停用旧地址并生成新地址"
+                >
+                  <RefreshCw className={`w-4 h-4 ${icsBusy ? 'animate-spin' : ''}`} />
+                  <span>重置订阅地址</span>
+                </button>
+              </div>
+            </section>
+          )}
         </div>
 
         {/* 头像裁剪上传 */}
@@ -542,9 +596,9 @@ export const ProfileSettings = ({
                 setCachedAvatar(user.id, r.avatar_ver, dataUrl);
                 onAvatarChanged(r.avatar_ver);
                 setCropOpen(false);
-                setSuccess('头像已更新');
+                setProfileMsg({ ok: true, text: '头像已更新' });
               } catch (e) {
-                setError(e instanceof Error ? e.message : '头像上传失败');
+                setProfileMsg({ ok: false, text: e instanceof Error ? e.message : '头像上传失败' });
               }
             }}
           />

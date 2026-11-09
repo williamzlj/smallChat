@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Zap, RotateCcw, BellRing, ChevronRight } from 'lucide-react';
+import { X, RotateCcw, BellRing, ChevronRight } from 'lucide-react';
+import { QuickPhrases } from './QuickPhrases';
 
-// 快速文本：紧急/重要 + 时长（按时间从短到长排序，便于扫描）
+// 快速文本默认短语：紧急/重要 + 时长（按时间从短到长排序，便于扫描）
+// 用户可在「管理短语」中自定义，保存在本设备
 export const TODO_QUICK_TAGS = [
   '特别紧急',
-  '特别重要',
+  '重要',
   '预计10分钟',
   '预计30分钟',
   '预计1小时',
@@ -19,25 +21,19 @@ interface Props {
   title: string; // 弹窗标题（添加待办备注 / 修改待办备注 / 设为待办事项）
   initialNote: string; // 初始备注（已有待办备注；用于"还原"按钮）
   onSave: (note: string) => Promise<void> | void;
+  // 标记为已完成并保存（可选）：传入后按钮才显示，用于"事情已做完、补流程"的场景，省去保存后再标记
+  onSaveDone?: (note: string) => Promise<void> | void;
   // 设置提醒入口（可选）：传入后才显示；点击时一并提交当前备注并打开到点提醒编辑
   onSetDue?: (note: string) => Promise<void> | void;
   onClose: () => void;
 }
 
 // 待办备注编辑弹窗：textarea + 快速文本按钮 + 设置提醒入口 + 还原按钮
-export const TodoNoteModal = ({ isDarkMode, title, initialNote, onSave, onSetDue, onClose }: Props) => {
+export const TodoNoteModal = ({ isDarkMode, title, initialNote, onSave, onSaveDone, onSetDue, onClose }: Props) => {
   const [note, setNote] = useState(initialNote);
   const [saving, setSaving] = useState(false);
   // 是否修改过：控制"还原"按钮显隐（没改过就不显示，避免干扰）
   const changed = note !== initialNote;
-
-  // 快速文本插入到已有文本最前面（不覆盖），已有文本时用中文逗号衔接
-  const appendTag = (tag: string) => {
-    setNote((prev) => {
-      const t = prev.trim();
-      return t ? `${tag}，${t}` : tag;
-    });
-  };
 
   // 还原：恢复初始备注
   const restore = () => setNote(initialNote);
@@ -47,6 +43,17 @@ export const TodoNoteModal = ({ isDarkMode, title, initialNote, onSave, onSetDue
     setSaving(true);
     try {
       await onSave(note.trim());
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 标记为已完成并保存：直接提交为已完成待办（补流程场景，避免保存后再二次标记）
+  const saveDone = async () => {
+    if (saving || !onSaveDone) return;
+    setSaving(true);
+    try {
+      await onSaveDone(note.trim());
     } finally {
       setSaving(false);
     }
@@ -79,27 +86,16 @@ export const TodoNoteModal = ({ isDarkMode, title, initialNote, onSave, onSetDue
           </button>
         </div>
         <div className="p-4 space-y-3">
-          <div>
-            <p className={`text-sm mb-1.5 flex items-center gap-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-              <Zap className="w-3.5 h-3.5 text-amber-500" />
-              快速输入（插入到备注最前面）
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {TODO_QUICK_TAGS.map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => appendTag(tag)}
-                  className={`px-2.5 py-1 text-sm rounded-full border transition-colors ${
-                    isDarkMode
-                      ? 'border-gray-600 text-gray-200 hover:bg-gray-700'
-                      : 'border-gray-300 text-gray-700 hover:bg-amber-50 hover:border-amber-400'
-                  }`}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* 快速录入短语：默认前插保持原习惯，可切换覆盖/后插；短语可在「管理短语」中自定义 */}
+          <QuickPhrases
+            storageKey="todo-note"
+            defaultPhrases={TODO_QUICK_TAGS}
+            value={note}
+            onChange={setNote}
+            isDarkMode={isDarkMode}
+            defaultMode="prepend"
+            accent="amber"
+          />
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value.slice(0, 500))}
@@ -147,6 +143,19 @@ export const TodoNoteModal = ({ isDarkMode, title, initialNote, onSave, onSetDue
               >
                 取消
               </button>
+              {onSaveDone && (
+                <button
+                  onClick={() => void saveDone()}
+                  disabled={saving}
+                  className={`px-4 py-2 text-sm rounded-lg border transition-colors disabled:opacity-50 ${
+                    isDarkMode
+                      ? 'border-green-500/60 text-green-400 hover:bg-gray-700'
+                      : 'border-green-500 text-green-600 hover:bg-green-50'
+                  }`}
+                >
+                  标记为已完成
+                </button>
+              )}
               <button
                 onClick={() => void save()}
                 disabled={saving}

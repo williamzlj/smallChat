@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Flag, Loader2, Menu, X, Download, Copy, Archive } from 'lucide-react';
+import { Flag, Loader2, Menu, X, Download, Copy, Archive, Info } from 'lucide-react';
 import { api } from '../api/client';
 import { CrossGroupMessage, GroupRole } from '../api/types';
-import { usePanelMenu, PanelItem, msgLine, msgText, PanelAction } from './PanelShared';
+import { usePanelMenu, PanelItem, msgLine, msgText, PanelAction, COLOR_OPTS } from './PanelShared';
 import { ContextModal } from './ContextModal';
 
 interface Props {
@@ -49,6 +49,15 @@ export const ImportantPanel = ({ isDarkMode, fontSize, hintFontSize, onJump, onT
   // 折叠模式：只显示标题，隐藏备注/群名等次要信息（右侧可单独展开某条）
   const [compact, setCompact] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  // 颜色用途说明弹窗
+  const [showColorHelp, setShowColorHelp] = useState(false);
+  // 颜色备注：仅保存在本浏览器（localStorage），方便用户自己记录颜色用法约定
+  const COLOR_NOTE_KEY = 'smallchat-color-usage-note';
+  const [colorNote, setColorNote] = useState(() => localStorage.getItem(COLOR_NOTE_KEY) || '');
+  const onColorNoteChange = (v: string) => {
+    setColorNote(v);
+    localStorage.setItem(COLOR_NOTE_KEY, v);
+  };
 
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -226,6 +235,13 @@ export const ImportantPanel = ({ isDarkMode, fontSize, hintFontSize, onJump, onT
         <div className="flex items-center flex-shrink-0">
           {exportMsg && <span className="text-sm text-green-600 mr-1">{exportMsg}</span>}
           <button
+            onClick={() => setShowColorHelp(true)}
+            className={`p-2 rounded-lg ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}
+            title="颜色用途说明"
+          >
+            <Info className="w-5 h-5" />
+          </button>
+          <button
             onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
             className={`p-2 rounded-lg ${selectMode ? 'bg-green-100 text-green-600' : isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-500 hover:bg-gray-100'}`}
             title={selectMode ? '退出多选' : '多选合并复制'}
@@ -353,6 +369,62 @@ export const ImportantPanel = ({ isDarkMode, fontSize, hintFontSize, onJump, onT
         )}
       </div>
       {menuEl}
+      {/* 颜色用途说明：介绍每种颜色对应的使用场景，便于统一标记习惯 */}
+      {showColorHelp && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-[95] p-4"
+          onClick={() => setShowColorHelp(false)}
+        >
+          <div
+            className={`rounded-2xl shadow-xl w-full max-w-sm ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={`flex items-center justify-between p-4 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+              <h3 className={`text-base font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>颜色用途说明</h3>
+              <button
+                onClick={() => setShowColorHelp(false)}
+                className={`p-1.5 rounded-lg ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-400 hover:bg-gray-100'}`}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              {COLOR_OPTS.map((o) => {
+                const [name, desc] = o.title.split('：');
+                return (
+                  <div key={o.color} className="flex items-start gap-3">
+                    <span className={`w-3 h-3 rounded-full mt-1 flex-shrink-0 ${o.bg}`} />
+                    <div className="min-w-0">
+                      <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>{name}</p>
+                      <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{desc}</p>
+                    </div>
+                  </div>
+                );
+              })}
+              {/* 颜色备注：只存在本浏览器，不上传服务器，供用户自己记录约定 */}
+              <div className={`pt-2 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                <label className={`block text-xs mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  颜色备注（仅本浏览器可见）
+                </label>
+                <textarea
+                  value={colorNote}
+                  onChange={(e) => onColorNoteChange(e.target.value)}
+                  rows={3}
+                  placeholder="记录自己的颜色用法约定，例如：红色只标需要今天处理的"
+                  className={`w-full text-sm rounded-lg px-3 py-2 resize-none outline-none border ${
+                    isDarkMode
+                      ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-green-500'
+                      : 'bg-gray-50 border-gray-200 text-gray-700 placeholder-gray-400 focus:border-green-500'
+                  }`}
+                />
+              </div>
+              <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                在消息上右键选择颜色即可标记为重要消息，标记后的消息会归入对应颜色的分类，供查看。
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       {contextMsg && (
         <ContextModal
           messageId={contextMsg.id}

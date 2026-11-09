@@ -11,6 +11,7 @@ export interface User {
   avatar_ver: number; // 头像版本号，0=未设置头像；变化时才需重新拉取头像数据
   signature: string; // 用户签名（500 字以内）
   card_signature: string; // 分享卡片署名（20 字以内，留空则卡片不显示署名）
+  private_note: string; // 个人备注（仅本人可见，保存在服务器）
 }
 
 export interface Group {

@@ -102,6 +102,7 @@ export const useAuth = () => {
       nickname?: string;
       color?: string;
       signature?: string;
+      privateNote?: string;
       oldPassword?: string;
       newPassword?: string;
     }): Promise<AuthResult> => {
@@ -110,12 +111,14 @@ export const useAuth = () => {
           nickname?: string;
           color?: string;
           signature?: string;
+          private_note?: string;
           old_password?: string;
           new_password?: string;
         } = {};
         if (data.nickname !== undefined) payload.nickname = data.nickname;
         if (data.color !== undefined) payload.color = data.color;
         if (data.signature !== undefined) payload.signature = data.signature;
+        if (data.privateNote !== undefined) payload.private_note = data.privateNote;
         if (data.newPassword) {
           payload.old_password = data.oldPassword;
           payload.new_password = data.newPassword;

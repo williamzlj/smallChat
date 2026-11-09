@@ -33,8 +33,6 @@ input[type="date"].date-placeholder-hidden:focus::-webkit-datetime-edit-year-fie
 html, body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   background-color: #e5e5e5;
-  min-height: 100vh;
-  min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   height: 100%;
@@ -48,38 +46,29 @@ html, body {
 }
 
 #root {
-  height: 100%;
+  /* 与 .h-app 同源：JS 可用时取 visualViewport 实时高度，否则回到 100% 布局高度 */
+  height: var(--app-height, 100%);
   width: 100%;
-  min-height: 100vh;
-  min-height: 100dvh;
-  padding-bottom: env(safe-area-inset-bottom);
   box-sizing: border-box;
 }
 
-/* iOS Chrome/Safari 地址栏导致 100vh 包含地址栏高度，底部输入框被截断。
-   dvh 随地址栏显示/隐藏动态调整，使内容始终在可见区域内。
-   旧浏览器回退到 100vh。 */
+/* 应用高度：优先用 main.tsx 按 visualViewport 实时写入的 --app-height。
+   Android Chrome 在地址栏/系统导航条显示隐藏时 100dvh 可能滞后，底部输入框会被挤出可视区；
+   100vh/100dvh 仅作为 JS 尚未执行或 visualViewport 不可用时的回退。 */
 .h-app {
   height: 100vh;
-  height: 100dvh;
+  height: var(--app-height, 100dvh);
 }
 .min-h-app {
   min-height: 100vh;
-  min-height: 100dvh;
+  min-height: var(--app-height, 100dvh);
 }
 
 @media screen and (max-width: 768px) {
-  html, body {
-    height: 100%;
-    min-height: calc(100vh - env(safe-area-inset-bottom));
-    min-height: calc(100dvh - env(safe-area-inset-bottom));
-  }
-  
   #root {
-    height: 100%;
-    min-height: 100vh;
-    min-height: 100dvh;
     overflow-y: auto;
+    /* 防止横向溢出时出现横向滚动条（会占用输入框上方空间） */
+    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
   }
 }
@@ -94,10 +83,8 @@ html, body {
 }
 
 @supports (bottom: env(safe-area-inset-bottom)) {
-  body {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-
+  /* 底部安全区统一交给具体底栏（聊天输入框 .pb-safe）处理；
+     body/#root 不再整体加 padding，否则会把应用高度压小，反而让底栏被挤出可视区 */
   .pb-safe {
     padding-bottom: calc(12px + env(safe-area-inset-bottom));
   }
