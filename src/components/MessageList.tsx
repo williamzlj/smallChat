@@ -229,14 +229,21 @@ export const MessageList = ({
     stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
 
-  // 初次加载/切群：滚到底（面板定位跳转除外，定位由下面的 effect 处理）
+  const scrolledGroupRef = useRef<number | null>(null);
+
+  // 初次加载/切群：滚到底并贴底。
+  // 触发条件用「消息所属群」判断，而不是 loading 翻转——因为秒开缓存路径下
+  // loading 直接保持 false（不经历 true→false），只监听 loading 会导致缓存群
+  // 进来后不滚底、停在几天前的旧消息位置。面板定位跳转由下面的 effect 单独处理。
   useEffect(() => {
-    if (!loading && messages.length > 0 && !highlightMsgId) {
-      bottomRef.current?.scrollIntoView({ block: 'end' });
-      stickToBottomRef.current = true;
-      prevFirstIdRef.current = messages[0]?.id ?? null;
-    }
-  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (loading || highlightMsgId || messages.length === 0) return;
+    const gid = messages[0].group_id;
+    if (gid === scrolledGroupRef.current) return;
+    bottomRef.current?.scrollIntoView({ block: 'end' });
+    stickToBottomRef.current = true;
+    scrolledGroupRef.current = gid;
+    prevFirstIdRef.current = messages[0]?.id ?? null;
+  }, [loading, messages, highlightMsgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 面板跳转定位：消息渲染后滚动到目标并居中高亮，3 秒后取消高亮
   useEffect(() => {

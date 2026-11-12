@@ -3,7 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- interactive-widget=resizes-content：Android Chrome 键盘弹出时收缩布局视口，
+         避免固定定位/85vh 的弹窗按"整屏高度"排版而被键盘盖住（iOS 会忽略该参数） -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <meta name="theme-color" content="#22c55e" />
     <meta name="description" content="多设备信息同步工具" />
     <link rel="apple-touch-icon" href="/pwa-192x192.png" />

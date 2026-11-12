@@ -223,9 +223,16 @@ export const AmountEditor = ({
   const labelCls = `text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`;
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[90] p-4" onClick={onClose}>
+    // 遮罩对齐 visualViewport：top 用 --app-top（iOS 键盘弹出时可视区会整体下移，
+    // fixed 仍按布局视口定位，不补偿就会跑到上方并露出大片空白），高度用 --app-height；
+    // 键盘弹出时弹窗整体落在键盘上方，卡片内部滚动
+    <div
+      className="fixed inset-x-0 bg-black/60 flex items-center justify-center z-[90] p-4"
+      style={{ top: 'var(--app-top, 0px)', height: 'var(--app-height, 100dvh)' }}
+      onClick={onClose}
+    >
       <div
-        className={`rounded-2xl shadow-xl w-full max-w-sm max-h-[85vh] overflow-y-auto ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}
+        className={`rounded-2xl shadow-xl w-full max-w-sm max-h-full overflow-y-auto ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className={`flex items-center justify-between p-4 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
