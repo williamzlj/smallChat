@@ -8,8 +8,12 @@ import {
 import { ChatMessage, GroupMember } from '../api/types';
 import { ImageCropModal } from './ImageCropModal';
 
+// 单条文本消息上限：与服务端 api.php 的 ulen($content) > 50000 保持一致（按 Unicode 字符计）
+const MAX_TEXT_CHARS = 50000;
+
 interface Props {
   groupId: number;
+  username: string; // 当前登录用户名，用于超长文本转 txt 文件时的文件名
   members: GroupMember[]; // 已排除自己，用于 @ 提醒
   archived: boolean; // 群已停用：仅可查看
   observer?: boolean; // 当前用户为观察者：仅可查看，不能发送
@@ -113,6 +117,7 @@ interface PendingAttachment {
 
 export const InputBox = ({
   groupId,
+  username,
   members,
   archived,
   observer = false,
@@ -225,10 +230,35 @@ export const InputBox = ({
     if (ta) ta.style.setProperty('font-size', `${fontSize}px`, 'important');
   }, [fontSize]);
 
+  // 超长文本转 txt 的文件名：超长文本-用户名-20261112_0900.txt
+  const longTextFilename = () => {
+    const now = new Date();
+    const p = (n: number) => String(n).padStart(2, '0');
+    const stamp = `${now.getFullYear()}${p(now.getMonth() + 1)}${p(now.getDate())}_${p(now.getHours())}${p(now.getMinutes())}`;
+    const safeUser = (username || '用户').replace(/[\\/:*?"<>|\s]/g, '_');
+    return `超长文本-${safeUser}-${stamp}.txt`;
+  };
+
   const submitText = async () => {
     const content = input.trim();
     if (!content || sending) return;
     setError('');
+    // 超过单条消息上限（服务端 5 万字符）：确认后改为 txt 文件附件发送
+    const charCount = Array.from(content).length;
+    if (charCount > MAX_TEXT_CHARS) {
+      if (!confirm(`当前文本字数为${charCount}字，超过单次消息限制长度，将以txt文件的形式发送，确认？`)) return;
+      try {
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        await onSendFile(blob, longTextFilename(), 'file');
+        setInput('');
+        localStorage.removeItem(draftKey);
+        setShowMention(false);
+        if (textareaRef.current) textareaRef.current.style.height = `${MIN_HEIGHT}px`;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : '发送失败');
+      }
+      return;
+    }
     try {
       await onSendText(content);
       setInput('');

@@ -1244,6 +1244,7 @@ export default function App() {
             />
             <InputBox
               groupId={currentGroup.id}
+              username={user.username}
               members={members.filter((mb) => mb.id !== user.id)}
               archived={currentGroup.is_archived === 1}
               observer={currentGroup.is_dm !== 1 && myRole === 'observer'}
