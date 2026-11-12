@@ -54,13 +54,11 @@ html, body {
 
 /* 应用高度：优先用 main.tsx 按 visualViewport 实时写入的 --app-height。
    Android Chrome 在地址栏/系统导航条显示隐藏时 100dvh 可能滞后，底部输入框会被挤出可视区；
-   100vh/100dvh 仅作为 JS 尚未执行或 visualViewport 不可用时的回退。 */
+   100dvh 仅作为 JS 尚未执行或 visualViewport 不可用时的回退。 */
 .h-app {
-  height: 100vh;
   height: var(--app-height, 100dvh);
 }
 .min-h-app {
-  min-height: 100vh;
   min-height: var(--app-height, 100dvh);
 }
 
@@ -88,6 +86,19 @@ html, body {
 @media screen and (max-width: 768px) {
   input, textarea, select {
     font-size: 16px !important;
+  }
+}
+
+/* 移动端：所有 fixed 遮罩/弹窗必须跟随 visualViewport 的 top + height，
+   否则 iOS 键盘弹出时 visualViewport.offsetTop 变化，而 fixed 仍按 layout viewport
+   定位 → 弹窗跑到可视区上方，底部露出大片灰色空白。
+   覆盖范围：.fixed.inset-0（绝大多数弹窗遮罩） + .fixed.inset-x-0（AmountEditor 等）。
+   内联 style 的弹窗（如 AmountEditor 自己设了 top/height）因优先级更高不受影响。 */
+@media screen and (max-width: 768px) {
+  .fixed.inset-0,
+  .fixed.inset-x-0 {
+    top: var(--app-top, 0px) !important;
+    height: var(--app-height, 100dvh) !important;
   }
 }
 

@@ -312,7 +312,7 @@ export const MessageList = ({
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className={`flex-1 overflow-y-auto chat-container ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}
+        className={`flex-1 overflow-y-auto ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}
       >
         <div className="px-3 sm:px-6 py-4 max-w-3xl mx-auto">
           {/* 历史加载 */}
