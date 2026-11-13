@@ -834,19 +834,13 @@ export const MessageBubble = ({
             {message.type === 'text' && message.content && (
               <button onClick={() => copyText(false)} className={menuBtn}>
                 <IconChip color="blue" isDarkMode={isDarkMode}><Copy className="w-4 h-4" /></IconChip>
-                <span>复制</span>
-              </button>
-            )}
-            {message.type === 'text' && message.content && (
-              <button onClick={() => copyText(false)} className={menuBtn}>
-                <IconChip color="blue" isDarkMode={isDarkMode}><Copy className="w-4 h-4" /></IconChip>
-                <span>复制</span>
+                <span>复制消息</span>
               </button>
             )}
             {message.type === 'text' && message.content && (
               <button onClick={() => copyText(true)} className={menuBtn}>
                 <IconChip color="orange" isDarkMode={isDarkMode}><Copy className="w-4 h-4" /></IconChip>
-                <span>复制(带时间)</span>
+                <span>复制(含时间昵称)</span>
               </button>
             )}
             {message.type === 'text' && message.content && (
