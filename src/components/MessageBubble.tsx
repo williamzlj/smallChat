@@ -121,25 +121,37 @@ function forwardItemPreview(it: ForwardItem): string {
 }
 
 // 彩色图标 chip：每个菜单项的图标配上小色块背景，参照微信风格，醒目易识别
-// palette: bg-* / icon-* 为 Tailwind 色值；darkBg / darkIcon 为深色模式下覆盖值（可省略）
+// palette: bg-* / icon-* 为 Tailwind 色值；darkBg / darkIcon 为深色模式下覆盖值
+// 配色原则：网格两列中，同一行左右两列颜色必须色相差最大，纵向相邻行不同色
 type ChipColor =
   | 'blue' | 'green' | 'amber' | 'red' | 'purple' | 'indigo' | 'orange'
-  | 'teal' | 'rose' | 'sky' | 'slate' | 'emerald' | 'lime';
+  | 'teal' | 'rose' | 'sky' | 'slate' | 'emerald' | 'lime'
+  | 'violet' | 'pink' | 'fuchsia' | 'cyan' | 'yellow' | 'neutral';
 
 const CHIP_PALETTE: Record<ChipColor, { bg: string; icon: string; darkBg: string; darkIcon: string }> = {
-  blue:    { bg: 'bg-blue-100',    icon: 'text-blue-600',    darkBg: 'bg-blue-900/60',    darkIcon: 'text-blue-300' },
-  green:   { bg: 'bg-green-100',   icon: 'text-green-600',   darkBg: 'bg-green-900/60',   darkIcon: 'text-green-300' },
-  amber:   { bg: 'bg-amber-100',   icon: 'text-amber-600',   darkBg: 'bg-amber-900/60',   darkIcon: 'text-amber-300' },
-  red:     { bg: 'bg-red-100',     icon: 'text-red-600',     darkBg: 'bg-red-900/60',     darkIcon: 'text-red-300' },
-  purple:  { bg: 'bg-purple-100',  icon: 'text-purple-600',  darkBg: 'bg-purple-900/60',  darkIcon: 'text-purple-300' },
-  indigo:  { bg: 'bg-indigo-100',  icon: 'text-indigo-600',  darkBg: 'bg-indigo-900/60',  darkIcon: 'text-indigo-300' },
-  orange:  { bg: 'bg-orange-100',  icon: 'text-orange-600',  darkBg: 'bg-orange-900/60',  darkIcon: 'text-orange-300' },
-  teal:    { bg: 'bg-teal-100',    icon: 'text-teal-600',    darkBg: 'bg-teal-900/60',    darkIcon: 'text-teal-300' },
-  rose:    { bg: 'bg-rose-100',    icon: 'text-rose-600',    darkBg: 'bg-rose-900/60',    darkIcon: 'text-rose-300' },
-  sky:     { bg: 'bg-sky-100',     icon: 'text-sky-600',     darkBg: 'bg-sky-900/60',     darkIcon: 'text-sky-300' },
-  slate:   { bg: 'bg-slate-100',   icon: 'text-slate-600',   darkBg: 'bg-slate-700',      darkIcon: 'text-slate-300' },
-  emerald: { bg: 'bg-emerald-100', icon: 'text-emerald-600', darkBg: 'bg-emerald-900/60', darkIcon: 'text-emerald-300' },
-  lime:    { bg: 'bg-lime-100',    icon: 'text-lime-700',    darkBg: 'bg-lime-900/60',    darkIcon: 'text-lime-300' },
+  // —— 冷色系 ——
+  blue:     { bg: 'bg-blue-100',     icon: 'text-blue-600',     darkBg: 'bg-blue-900/60',     darkIcon: 'text-blue-300' },
+  cyan:     { bg: 'bg-cyan-100',     icon: 'text-cyan-600',     darkBg: 'bg-cyan-900/60',     darkIcon: 'text-cyan-300' },
+  sky:      { bg: 'bg-sky-100',      icon: 'text-sky-600',      darkBg: 'bg-sky-900/60',      darkIcon: 'text-sky-300' },
+  indigo:   { bg: 'bg-indigo-100',   icon: 'text-indigo-600',   darkBg: 'bg-indigo-900/60',   darkIcon: 'text-indigo-300' },
+  violet:   { bg: 'bg-violet-100',   icon: 'text-violet-600',   darkBg: 'bg-violet-900/60',   darkIcon: 'text-violet-300' },
+  // —— 暖色系 ——
+  orange:   { bg: 'bg-orange-100',   icon: 'text-orange-600',   darkBg: 'bg-orange-900/60',   darkIcon: 'text-orange-300' },
+  amber:    { bg: 'bg-amber-100',    icon: 'text-amber-600',    darkBg: 'bg-amber-900/60',    darkIcon: 'text-amber-300' },
+  yellow:   { bg: 'bg-yellow-100',   icon: 'text-yellow-700',   darkBg: 'bg-yellow-900/60',   darkIcon: 'text-yellow-300' },
+  rose:     { bg: 'bg-rose-100',     icon: 'text-rose-600',     darkBg: 'bg-rose-900/60',     darkIcon: 'text-rose-300' },
+  red:      { bg: 'bg-red-100',      icon: 'text-red-600',      darkBg: 'bg-red-900/60',      darkIcon: 'text-red-300' },
+  pink:     { bg: 'bg-pink-100',     icon: 'text-pink-600',     darkBg: 'bg-pink-900/60',     darkIcon: 'text-pink-300' },
+  fuchsia:  { bg: 'bg-fuchsia-100',  icon: 'text-fuchsia-600',  darkBg: 'bg-fuchsia-900/60',  darkIcon: 'text-fuchsia-300' },
+  // —— 绿/青系 ——
+  green:    { bg: 'bg-green-100',    icon: 'text-green-600',    darkBg: 'bg-green-900/60',    darkIcon: 'text-green-300' },
+  emerald:  { bg: 'bg-emerald-100',  icon: 'text-emerald-600',  darkBg: 'bg-emerald-900/60',  darkIcon: 'text-emerald-300' },
+  teal:     { bg: 'bg-teal-100',      icon: 'text-teal-600',      darkBg: 'bg-teal-900/60',      darkIcon: 'text-teal-300' },
+  lime:     { bg: 'bg-lime-100',     icon: 'text-lime-700',     darkBg: 'bg-lime-900/60',     darkIcon: 'text-lime-300' },
+  purple:   { bg: 'bg-purple-100',   icon: 'text-purple-600',   darkBg: 'bg-purple-900/60',   darkIcon: 'text-purple-300' },
+  // —— 中性 ——
+  slate:    { bg: 'bg-slate-100',    icon: 'text-slate-600',    darkBg: 'bg-slate-700',       darkIcon: 'text-slate-300' },
+  neutral:  { bg: 'bg-neutral-100',  icon: 'text-neutral-600',  darkBg: 'bg-neutral-700',    darkIcon: 'text-neutral-300' },
 };
 
 function IconChip({
@@ -826,8 +838,14 @@ export const MessageBubble = ({
               </button>
             )}
             {message.type === 'text' && message.content && (
+              <button onClick={() => copyText(false)} className={menuBtn}>
+                <IconChip color="blue" isDarkMode={isDarkMode}><Copy className="w-4 h-4" /></IconChip>
+                <span>复制</span>
+              </button>
+            )}
+            {message.type === 'text' && message.content && (
               <button onClick={() => copyText(true)} className={menuBtn}>
-                <IconChip color="sky" isDarkMode={isDarkMode}><Copy className="w-4 h-4" /></IconChip>
+                <IconChip color="orange" isDarkMode={isDarkMode}><Copy className="w-4 h-4" /></IconChip>
                 <span>复制(带时间)</span>
               </button>
             )}
@@ -839,7 +857,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <IconChip color="indigo" isDarkMode={isDarkMode}><TextSelect className="w-4 h-4" /></IconChip>
+                <IconChip color="violet" isDarkMode={isDarkMode}><TextSelect className="w-4 h-4" /></IconChip>
                 <span>选择</span>
               </button>
             )}
@@ -850,7 +868,7 @@ export const MessageBubble = ({
               }}
               className={menuBtn}
             >
-              <IconChip color="indigo" isDarkMode={isDarkMode}><ListChecks className="w-4 h-4" /></IconChip>
+              <IconChip color="pink" isDarkMode={isDarkMode}><ListChecks className="w-4 h-4" /></IconChip>
               <span>多选</span>
             </button>
             <button
@@ -860,7 +878,7 @@ export const MessageBubble = ({
               }}
               className={menuBtn}
             >
-              <IconChip color="blue" isDarkMode={isDarkMode}><CornerUpLeft className="w-4 h-4" /></IconChip>
+              <IconChip color="cyan" isDarkMode={isDarkMode}><CornerUpLeft className="w-4 h-4" /></IconChip>
               <span>引用</span>
             </button>
             <button
@@ -880,7 +898,7 @@ export const MessageBubble = ({
               }}
               className={menuBtn}
             >
-              <IconChip color="emerald" isDarkMode={isDarkMode}><Forward className="w-4 h-4" /></IconChip>
+              <IconChip color="teal" isDarkMode={isDarkMode}><Forward className="w-4 h-4" /></IconChip>
               <span>转发(带来源)</span>
             </button>
             {canManage && (
@@ -891,7 +909,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <IconChip color="orange" isDarkMode={isDarkMode}><Pin className="w-4 h-4" /></IconChip>
+                <IconChip color="rose" isDarkMode={isDarkMode}><Pin className="w-4 h-4" /></IconChip>
                 <span>{isPinned ? '取消置顶' : '置顶'}</span>
               </button>
             )}
@@ -903,7 +921,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <IconChip color="purple" isDarkMode={isDarkMode}><ImageDown className="w-4 h-4" /></IconChip>
+                <IconChip color="fuchsia" isDarkMode={isDarkMode}><ImageDown className="w-4 h-4" /></IconChip>
                 <span>生成分享卡片</span>
               </button>
             )}
@@ -916,7 +934,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <IconChip color="rose" isDarkMode={isDarkMode}><Wallet className="w-4 h-4" /></IconChip>
+                <IconChip color="red" isDarkMode={isDarkMode}><Wallet className="w-4 h-4" /></IconChip>
                 <span>{message.amount_kind > 0 ? '修改金额' : '记账'}</span>
               </button>
             )}
@@ -939,7 +957,7 @@ export const MessageBubble = ({
                   isDarkMode ? 'text-gray-200 hover:bg-gray-600' : 'text-gray-700 hover:bg-gray-100'
                 }`}
               >
-                <IconChip color="slate" isDarkMode={isDarkMode}><Undo2 className="w-4 h-4" /></IconChip>
+                <IconChip color="neutral" isDarkMode={isDarkMode}><Undo2 className="w-4 h-4" /></IconChip>
                 <span>撤回</span>
               </button>
             )}
@@ -985,7 +1003,7 @@ export const MessageBubble = ({
             )}
             {canManage && message.todo_status > 0 && (
               <button onClick={editNote} className={menuBtn}>
-                <IconChip color="amber" isDarkMode={isDarkMode}><StickyNote className="w-4 h-4" /></IconChip>
+                <IconChip color="lime" isDarkMode={isDarkMode}><StickyNote className="w-4 h-4" /></IconChip>
                 <span>{message.todo_note ? '修改待办备注' : '添加待办备注'}</span>
               </button>
             )}
@@ -997,7 +1015,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <IconChip color="amber" isDarkMode={isDarkMode}><BellRing className="w-4 h-4 flex-shrink-0" /></IconChip>
+                <IconChip color="yellow" isDarkMode={isDarkMode}><BellRing className="w-4 h-4 flex-shrink-0" /></IconChip>
                 <span className="break-all leading-tight">{message.due_at ? `提醒：${message.due_at.slice(0, 16)}` : '设置到点提醒'}</span>
               </button>
             )}
@@ -1009,12 +1027,12 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <IconChip color="amber" isDarkMode={isDarkMode}><X className="w-4 h-4" /></IconChip>
+                <IconChip color="neutral" isDarkMode={isDarkMode}><X className="w-4 h-4" /></IconChip>
                 <span>改成普通消息</span>
               </button>
             )}
             <button onClick={editMsgNote} className={menuBtn}>
-              <IconChip color="blue" isDarkMode={isDarkMode}><StickyNote className="w-4 h-4" /></IconChip>
+              <IconChip color="sky" isDarkMode={isDarkMode}><StickyNote className="w-4 h-4" /></IconChip>
               <span>{message.note || privateNotes[message.id] ? '修改消息备注' : '添加消息备注'}</span>
             </button>
             {(message.type === 'image' || message.type === 'file') && message.file && (
@@ -1025,7 +1043,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <IconChip color="teal" isDarkMode={isDarkMode}><Download className="w-4 h-4" /></IconChip>
+                <IconChip color="indigo" isDarkMode={isDarkMode}><Download className="w-4 h-4" /></IconChip>
                 <span>{message.type === 'image' ? '查看大图' : '打开/下载文件'}</span>
               </button>
             )}
@@ -1047,7 +1065,7 @@ export const MessageBubble = ({
             <>
               <div className={`my-1 border-t ${isDarkMode ? 'border-gray-600' : 'border-gray-100'}`} />
               <div className="px-3 py-1.5 flex items-center gap-2.5">
-                <IconChip color="purple" isDarkMode={isDarkMode}><Palette className="w-4 h-4" /></IconChip>
+                <IconChip color="violet" isDarkMode={isDarkMode}><Palette className="w-4 h-4" /></IconChip>
                 {COLOR_OPTS.map((o) => (
                   <button
                     key={o.color}
@@ -1069,7 +1087,7 @@ export const MessageBubble = ({
                   onClick={() => { setShowMenu(false); onSetColor(message, 0); }}
                   className={menuBtn}
                 >
-                  <IconChip color="slate" isDarkMode={isDarkMode}><Palette className="w-4 h-4" /></IconChip>
+                  <IconChip color="neutral" isDarkMode={isDarkMode}><Palette className="w-4 h-4" /></IconChip>
                   <span>取消颜色标记</span>
                 </button>
               )}
@@ -1084,7 +1102,7 @@ export const MessageBubble = ({
               }}
               className={menuBtn}
             >
-              <IconChip color="teal" isDarkMode={isDarkMode}><Download className="w-4 h-4" /></IconChip>
+              <IconChip color="indigo" isDarkMode={isDarkMode}><Download className="w-4 h-4" /></IconChip>
               <span>{message.type === 'image' ? '查看大图' : '打开/下载文件'}</span>
             </button>
           )}
