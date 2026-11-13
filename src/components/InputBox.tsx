@@ -1,5 +1,5 @@
 import { useState, KeyboardEvent, useRef, useEffect, useLayoutEffect } from 'react';
-import { Send, Paperclip, Smile, Image as ImageIcon, X, Loader2, CornerUpLeft, AtSign, Archive, Plus, FileText, Crop } from 'lucide-react';
+import { Send, Paperclip, Smile, Image as ImageIcon, X, Loader2, CornerUpLeft, AtSign, Archive, Plus, FileText, Crop, ClipboardPaste, Eraser } from 'lucide-react';
 import {
   IMAGE_MAX_WIDTH,
   IMAGE_QUALITY,
@@ -292,10 +292,9 @@ export const InputBox = ({
     }
   };
 
-  const handleImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (e.target) e.target.value = '';
-    if (!file) return;
+  // 【对齐 shareCard 分享卡片生成工具】图片统一入口：选中文件与「从剪贴板粘贴」都走这里。
+  // 规则不变：超过体积阈值或超宽才压缩（gif 保动画），压缩后先进待发送预览，不直接发出。
+  const acceptImageFile = async (file: File) => {
     setError('');
     try {
       let blob: File | Blob = file;
@@ -318,6 +317,58 @@ export const InputBox = ({
     } catch (err) {
       setError(err instanceof Error ? err.message : '图片读取失败');
     }
+  };
+
+  const handleImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (e.target) e.target.value = '';
+    if (!file) return;
+    await acceptImageFile(file);
+  };
+
+  // 【对齐 shareCard 分享卡片生成工具】从剪贴板粘贴：
+  // 优先取图片（走 acceptImageFile，之后仍可裁剪/编辑），没有图片就把文字追加到输入框；
+  // 浏览器不支持或权限被拒时给中文提示（引导用户直接 Ctrl+V）。
+  const pasteFromClipboard = async () => {
+    setError('');
+    try {
+      if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+        throw new Error('unsupported');
+      }
+      const items = await navigator.clipboard.read();
+      let imageFile: File | null = null;
+      let text = '';
+      for (const item of items) {
+        const imgType = item.types.find((t) => t.startsWith('image/'));
+        if (imgType && !imageFile) {
+          const blob = await item.getType(imgType);
+          const ext = imgType.split('/')[1] || 'png';
+          imageFile = new File([blob], `clipboard-${Date.now()}.${ext}`, { type: imgType });
+        } else if (item.types.includes('text/plain')) {
+          const blob = await item.getType('text/plain');
+          text += await blob.text();
+        }
+      }
+      if (imageFile) {
+        await acceptImageFile(imageFile);
+        return;
+      }
+      if (text) {
+        changeInput(input + text);
+        textareaRef.current?.focus();
+        return;
+      }
+      setError('剪贴板里没有可粘贴的图片或文字');
+    } catch {
+      setError('无法直接读取剪贴板，请用 Ctrl+V 粘贴');
+    }
+  };
+
+  // 【对齐 shareCard 分享卡片生成工具】清空输入框：清掉文字与本地草稿，并保持输入焦点
+  const clearInput = () => {
+    setError('');
+    changeInput('');
+    textareaRef.current?.focus();
   };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -507,6 +558,23 @@ export const InputBox = ({
                 </div>
               )}
             </div>
+            {/* 【对齐 shareCard 分享卡片生成工具】桌面端直接铺开：从剪贴板粘贴 / 清空输入框 */}
+            <button
+              onClick={() => void pasteFromClipboard()}
+              disabled={sending || observer}
+              className={`${btnCls} disabled:opacity-50 disabled:cursor-not-allowed`}
+              title="从剪贴板粘贴"
+            >
+              <ClipboardPaste className="w-5 h-5" />
+            </button>
+            <button
+              onClick={clearInput}
+              disabled={!input || observer}
+              className={`${btnCls} disabled:opacity-50 disabled:cursor-not-allowed`}
+              title="清空输入框"
+            >
+              <Eraser className="w-5 h-5" />
+            </button>
           </>
         )}
 
@@ -591,6 +659,37 @@ export const InputBox = ({
                         <Smile className="w-5 h-5" />
                       </span>
                       <span>表情</span>
+                    </button>
+                    {/* 【对齐 shareCard 分享卡片生成工具】手机端把「粘贴 / 清空输入框」也收进「＋」菜单 */}
+                    <button
+                      onClick={() => {
+                        setShowPlus(false);
+                        void pasteFromClipboard();
+                      }}
+                      disabled={sending}
+                      className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-sm disabled:opacity-50 ${
+                        isDarkMode ? 'text-gray-200 hover:bg-gray-600' : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      <span className="w-8 h-8 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center flex-shrink-0">
+                        <ClipboardPaste className="w-5 h-5" />
+                      </span>
+                      <span>从剪贴板粘贴</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowPlus(false);
+                        clearInput();
+                      }}
+                      disabled={!input}
+                      className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-sm disabled:opacity-50 ${
+                        isDarkMode ? 'text-gray-200 hover:bg-gray-600' : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      <span className="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center flex-shrink-0">
+                        <Eraser className="w-5 h-5" />
+                      </span>
+                      <span>清空输入框</span>
                     </button>
                   </div>
                 )}

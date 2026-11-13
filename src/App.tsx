@@ -207,6 +207,7 @@ export default function App() {
     sendText,
     sendFileMessage,
     deleteMessage,
+    deleteMessages,
     recallMessage,
     setTodoStatus,
     setColorStatus,
@@ -1199,6 +1200,7 @@ export default function App() {
               peerLastReadId={peerLastRead}
               onLoadMore={loadMore}
               onDeleteMessage={deleteMessage}
+              onDeleteMessages={deleteMessages}
               onRecallMessage={recallMessage}
               recalledDrafts={recalledDrafts}
               onReEditRecord={(id, content) =>

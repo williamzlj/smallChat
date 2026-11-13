@@ -120,6 +120,49 @@ function forwardItemPreview(it: ForwardItem): string {
   return it.content;
 }
 
+// 彩色图标 chip：每个菜单项的图标配上小色块背景，参照微信风格，醒目易识别
+// palette: bg-* / icon-* 为 Tailwind 色值；darkBg / darkIcon 为深色模式下覆盖值（可省略）
+type ChipColor =
+  | 'blue' | 'green' | 'amber' | 'red' | 'purple' | 'indigo' | 'orange'
+  | 'teal' | 'rose' | 'sky' | 'slate' | 'emerald' | 'lime';
+
+const CHIP_PALETTE: Record<ChipColor, { bg: string; icon: string; darkBg: string; darkIcon: string }> = {
+  blue:    { bg: 'bg-blue-100',    icon: 'text-blue-600',    darkBg: 'bg-blue-900/60',    darkIcon: 'text-blue-300' },
+  green:   { bg: 'bg-green-100',   icon: 'text-green-600',   darkBg: 'bg-green-900/60',   darkIcon: 'text-green-300' },
+  amber:   { bg: 'bg-amber-100',   icon: 'text-amber-600',   darkBg: 'bg-amber-900/60',   darkIcon: 'text-amber-300' },
+  red:     { bg: 'bg-red-100',     icon: 'text-red-600',     darkBg: 'bg-red-900/60',     darkIcon: 'text-red-300' },
+  purple:  { bg: 'bg-purple-100',  icon: 'text-purple-600',  darkBg: 'bg-purple-900/60',  darkIcon: 'text-purple-300' },
+  indigo:  { bg: 'bg-indigo-100',  icon: 'text-indigo-600',  darkBg: 'bg-indigo-900/60',  darkIcon: 'text-indigo-300' },
+  orange:  { bg: 'bg-orange-100',  icon: 'text-orange-600',  darkBg: 'bg-orange-900/60',  darkIcon: 'text-orange-300' },
+  teal:    { bg: 'bg-teal-100',    icon: 'text-teal-600',    darkBg: 'bg-teal-900/60',    darkIcon: 'text-teal-300' },
+  rose:    { bg: 'bg-rose-100',    icon: 'text-rose-600',    darkBg: 'bg-rose-900/60',    darkIcon: 'text-rose-300' },
+  sky:     { bg: 'bg-sky-100',     icon: 'text-sky-600',     darkBg: 'bg-sky-900/60',     darkIcon: 'text-sky-300' },
+  slate:   { bg: 'bg-slate-100',   icon: 'text-slate-600',   darkBg: 'bg-slate-700',      darkIcon: 'text-slate-300' },
+  emerald: { bg: 'bg-emerald-100', icon: 'text-emerald-600', darkBg: 'bg-emerald-900/60', darkIcon: 'text-emerald-300' },
+  lime:    { bg: 'bg-lime-100',    icon: 'text-lime-700',    darkBg: 'bg-lime-900/60',    darkIcon: 'text-lime-300' },
+};
+
+function IconChip({
+  children,
+  color,
+  isDarkMode,
+}: {
+  children: React.ReactNode;
+  color: ChipColor;
+  isDarkMode: boolean;
+}) {
+  const palette = CHIP_PALETTE[color];
+  return (
+    <span
+      className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 ${
+        isDarkMode ? palette.darkBg : palette.bg
+      }`}
+    >
+      <span className={isDarkMode ? palette.darkIcon : palette.icon}>{children}</span>
+    </span>
+  );
+}
+
 // 「重新编辑」链接保留时长（撤回后 5 分钟内可一键填回输入框，微信同款）
 const REEDIT_WINDOW_MS = 5 * 60 * 1000;
 
@@ -778,13 +821,13 @@ export const MessageBubble = ({
           <div className="grid grid-cols-2 gap-x-1">
             {message.type === 'text' && message.content && (
               <button onClick={() => copyText(false)} className={menuBtn}>
-                <Copy className="w-4 h-4" />
+                <IconChip color="blue" isDarkMode={isDarkMode}><Copy className="w-4 h-4" /></IconChip>
                 <span>复制</span>
               </button>
             )}
             {message.type === 'text' && message.content && (
               <button onClick={() => copyText(true)} className={menuBtn}>
-                <Copy className="w-4 h-4" />
+                <IconChip color="sky" isDarkMode={isDarkMode}><Copy className="w-4 h-4" /></IconChip>
                 <span>复制(带时间)</span>
               </button>
             )}
@@ -796,7 +839,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <TextSelect className="w-4 h-4" />
+                <IconChip color="indigo" isDarkMode={isDarkMode}><TextSelect className="w-4 h-4" /></IconChip>
                 <span>选择</span>
               </button>
             )}
@@ -807,7 +850,7 @@ export const MessageBubble = ({
               }}
               className={menuBtn}
             >
-              <ListChecks className="w-4 h-4" />
+              <IconChip color="indigo" isDarkMode={isDarkMode}><ListChecks className="w-4 h-4" /></IconChip>
               <span>多选</span>
             </button>
             <button
@@ -817,7 +860,7 @@ export const MessageBubble = ({
               }}
               className={menuBtn}
             >
-              <CornerUpLeft className="w-4 h-4" />
+              <IconChip color="blue" isDarkMode={isDarkMode}><CornerUpLeft className="w-4 h-4" /></IconChip>
               <span>引用</span>
             </button>
             <button
@@ -827,7 +870,7 @@ export const MessageBubble = ({
               }}
               className={menuBtn}
             >
-              <Forward className="w-4 h-4" />
+              <IconChip color="green" isDarkMode={isDarkMode}><Forward className="w-4 h-4" /></IconChip>
               <span>转发</span>
             </button>
             <button
@@ -837,7 +880,7 @@ export const MessageBubble = ({
               }}
               className={menuBtn}
             >
-              <Forward className="w-4 h-4" />
+              <IconChip color="emerald" isDarkMode={isDarkMode}><Forward className="w-4 h-4" /></IconChip>
               <span>转发(带来源)</span>
             </button>
             {canManage && (
@@ -848,7 +891,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <Pin className="w-4 h-4" />
+                <IconChip color="orange" isDarkMode={isDarkMode}><Pin className="w-4 h-4" /></IconChip>
                 <span>{isPinned ? '取消置顶' : '置顶'}</span>
               </button>
             )}
@@ -860,7 +903,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <ImageDown className="w-4 h-4" />
+                <IconChip color="purple" isDarkMode={isDarkMode}><ImageDown className="w-4 h-4" /></IconChip>
                 <span>生成分享卡片</span>
               </button>
             )}
@@ -873,7 +916,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <Wallet className="w-4 h-4 text-red-500" />
+                <IconChip color="rose" isDarkMode={isDarkMode}><Wallet className="w-4 h-4" /></IconChip>
                 <span>{message.amount_kind > 0 ? '修改金额' : '记账'}</span>
               </button>
             )}
@@ -885,16 +928,18 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <Wallet className="w-4 h-4 text-gray-400" />
+                <IconChip color="slate" isDarkMode={isDarkMode}><Wallet className="w-4 h-4" /></IconChip>
                 <span>委托记账</span>
               </button>
             )}
             {canRecall && (
               <button
                 onClick={handleRecall}
-                className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-gray-600"
+                className={`w-full flex items-center space-x-2 px-3 py-2 text-sm ${
+                  isDarkMode ? 'text-gray-200 hover:bg-gray-600' : 'text-gray-700 hover:bg-gray-100'
+                }`}
               >
-                <Undo2 className="w-4 h-4" />
+                <IconChip color="slate" isDarkMode={isDarkMode}><Undo2 className="w-4 h-4" /></IconChip>
                 <span>撤回</span>
               </button>
             )}
@@ -902,11 +947,15 @@ export const MessageBubble = ({
               <button
                 onClick={() => {
                   setShowMenu(false);
-                  onSetTodo(message, 1);
+                  if (onTodoNoteEdit) {
+                    onTodoNoteEdit(message);
+                  } else {
+                    onSetTodo(message, 1);
+                  }
                 }}
                 className={menuBtn}
               >
-                <Square className="w-4 h-4 text-amber-500" />
+                <IconChip color="amber" isDarkMode={isDarkMode}><Square className="w-4 h-4" /></IconChip>
                 <span>设为待办事项</span>
               </button>
             )}
@@ -918,7 +967,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <CheckSquare className="w-4 h-4 text-green-500" />
+                <IconChip color="emerald" isDarkMode={isDarkMode}><CheckSquare className="w-4 h-4" /></IconChip>
                 <span>标记为已完成</span>
               </button>
             )}
@@ -930,13 +979,13 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <Square className="w-4 h-4 text-amber-500" />
+                <IconChip color="amber" isDarkMode={isDarkMode}><Square className="w-4 h-4" /></IconChip>
                 <span>恢复为待办</span>
               </button>
             )}
             {canManage && message.todo_status > 0 && (
               <button onClick={editNote} className={menuBtn}>
-                <StickyNote className="w-4 h-4 text-amber-500" />
+                <IconChip color="amber" isDarkMode={isDarkMode}><StickyNote className="w-4 h-4" /></IconChip>
                 <span>{message.todo_note ? '修改待办备注' : '添加待办备注'}</span>
               </button>
             )}
@@ -948,7 +997,7 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <BellRing className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                <IconChip color="amber" isDarkMode={isDarkMode}><BellRing className="w-4 h-4 flex-shrink-0" /></IconChip>
                 <span className="break-all leading-tight">{message.due_at ? `提醒：${message.due_at.slice(0, 16)}` : '设置到点提醒'}</span>
               </button>
             )}
@@ -960,12 +1009,12 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <X className="w-4 h-4 text-amber-500" />
+                <IconChip color="amber" isDarkMode={isDarkMode}><X className="w-4 h-4" /></IconChip>
                 <span>改成普通消息</span>
               </button>
             )}
             <button onClick={editMsgNote} className={menuBtn}>
-              <StickyNote className="w-4 h-4 text-blue-500" />
+              <IconChip color="blue" isDarkMode={isDarkMode}><StickyNote className="w-4 h-4" /></IconChip>
               <span>{message.note || privateNotes[message.id] ? '修改消息备注' : '添加消息备注'}</span>
             </button>
             {(message.type === 'image' || message.type === 'file') && message.file && (
@@ -976,16 +1025,18 @@ export const MessageBubble = ({
                 }}
                 className={menuBtn}
               >
-                <Download className="w-4 h-4" />
+                <IconChip color="teal" isDarkMode={isDarkMode}><Download className="w-4 h-4" /></IconChip>
                 <span>{message.type === 'image' ? '查看大图' : '打开/下载文件'}</span>
               </button>
             )}
             {canDelete && (
               <button
                 onClick={handleDelete}
-                className="w-full flex items-center space-x-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-gray-600"
+                className={`w-full flex items-center space-x-2 px-3 py-2 text-sm ${
+                  isDarkMode ? 'text-gray-200 hover:bg-red-900/40' : 'text-gray-800 hover:bg-red-50'
+                }`}
               >
-                <Trash2 className="w-4 h-4" />
+                <IconChip color="red" isDarkMode={isDarkMode}><Trash2 className="w-4 h-4" /></IconChip>
                 <span>删除</span>
               </button>
             )}
@@ -996,7 +1047,7 @@ export const MessageBubble = ({
             <>
               <div className={`my-1 border-t ${isDarkMode ? 'border-gray-600' : 'border-gray-100'}`} />
               <div className="px-3 py-1.5 flex items-center gap-2.5">
-                <Palette className={`w-4 h-4 flex-shrink-0 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                <IconChip color="purple" isDarkMode={isDarkMode}><Palette className="w-4 h-4" /></IconChip>
                 {COLOR_OPTS.map((o) => (
                   <button
                     key={o.color}
@@ -1018,7 +1069,7 @@ export const MessageBubble = ({
                   onClick={() => { setShowMenu(false); onSetColor(message, 0); }}
                   className={menuBtn}
                 >
-                  <Palette className="w-4 h-4" />
+                  <IconChip color="slate" isDarkMode={isDarkMode}><Palette className="w-4 h-4" /></IconChip>
                   <span>取消颜色标记</span>
                 </button>
               )}
@@ -1033,7 +1084,7 @@ export const MessageBubble = ({
               }}
               className={menuBtn}
             >
-              <Download className="w-4 h-4" />
+              <IconChip color="teal" isDarkMode={isDarkMode}><Download className="w-4 h-4" /></IconChip>
               <span>{message.type === 'image' ? '查看大图' : '打开/下载文件'}</span>
             </button>
           )}

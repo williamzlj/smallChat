@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChatMessage } from '../api/types';
 import { MessageBubble } from './MessageBubble';
-import { MessagesSquare, Loader2, ArrowUp, Inbox, CheckCircle2, Circle, SendHorizontal, X, Copy, ImageDown } from 'lucide-react';
+import { MessagesSquare, Loader2, ArrowUp, Inbox, CheckCircle2, Circle, SendHorizontal, X, Copy, ImageDown, Trash2 } from 'lucide-react';
 
 interface Props {
   messages: ChatMessage[];
@@ -20,6 +20,7 @@ interface Props {
   peerLastReadId: number; // 私聊对方的已读位置
   onLoadMore: () => void;
   onDeleteMessage: (id: number) => Promise<void>;
+  onDeleteMessages: (ids: number[]) => Promise<void>; // 批量删除（仅群主/副群主，群聊）
   onRecallMessage: (id: number) => Promise<void>; // 撤回自己的消息（2 分钟内）
   recalledDrafts: Record<number, { content: string; at: number }>; // 撤回消息的「重新编辑」内容（撤回时间起 5 分钟内有效）
   onReEditRecord: (id: number, content: string) => void; // 撤回成功后记录内容
@@ -93,6 +94,7 @@ export const MessageList = ({
   peerLastReadId,
   onLoadMore,
   onDeleteMessage,
+  onDeleteMessages,
   onRecallMessage,
   recalledDrafts,
   onReEditRecord,
@@ -211,6 +213,23 @@ export const MessageList = ({
     }
     exitSelect();
     onShareCardMulti(list);
+  };
+
+  // 批量删除选中消息（不常用；仅群聊群主/副群主可用，与单条删除权限一致）
+  const [deleting, setDeleting] = useState(false);
+  const confirmDeleteSelected = async () => {
+    const list = messages.filter((m) => selected.has(m.id) && m.deleted === 0 && m.id > 0);
+    if (list.length === 0 || deleting) return;
+    if (!confirm(`确定删除选中的 ${list.length} 条消息吗？删除后群内所有设备都不再显示。`)) return;
+    setDeleting(true);
+    try {
+      await onDeleteMessages(list.map((m) => m.id));
+      exitSelect();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '删除失败');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   // 只看待办：未完成(1)，勾选后包含已完成(2)；或只看重要消息（红/橙/蓝标记）；或只看财务消息（带记账金额）
@@ -474,6 +493,16 @@ export const MessageList = ({
             <SendHorizontal className="w-5 h-5 sm:w-4 sm:h-4" />
             <span>合并转发</span>
           </button>
+          {!isDm && canManage && (
+            <button
+              onClick={confirmDeleteSelected}
+              disabled={selected.size === 0 || deleting}
+              className="flex items-center space-x-1.5 px-4 py-2.5 text-base rounded-full bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 whitespace-nowrap flex-shrink-0 sm:space-x-1 sm:px-3 sm:py-1.5 sm:text-sm"
+            >
+              <Trash2 className="w-5 h-5 sm:w-4 sm:h-4" />
+              <span>{deleting ? '删除中…' : '批量删除'}</span>
+            </button>
+          )}
           <button
             onClick={exitSelect}
             className={`absolute top-1 right-1 p-1 rounded-full ${isDarkMode ? 'text-gray-300 hover:bg-gray-600' : 'text-gray-500 hover:bg-gray-100'}`}

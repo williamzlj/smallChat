@@ -236,7 +236,7 @@ async function buildFontEmbedCss(web: WebFont, content: string, bold: boolean): 
 }
 
 const FONT_MIN = 12;
-const FONT_MAX = 24;
+const FONT_MAX = 32;
 // 标题字号独立可调范围（与正文字号解耦）
 const TITLE_MIN = 12;
 const TITLE_MAX = 48;
@@ -266,11 +266,20 @@ type DatePos = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 type TitleAlign = 'center' | 'left';
 // 正文对齐：左对齐（默认）/ 居中 / 右对齐
 type BodyAlign = 'left' | 'center' | 'right';
+// 【对齐 shareCard 分享卡片生成工具】四边距字段名（null = 跟随「边距」档位）
+type PadKey = 'padTop' | 'padBottom' | 'padLeft' | 'padRight';
 const loadStyle = (): {
   theme: CardTheme;
   fontSize: number;
   fontKey: string;
   padKey: string;
+  // 【对齐 shareCard 分享卡片生成工具】四边距可单独覆盖：null = 跟随「边距」档位，数字 = 自定义像素（0~80）
+  padTop: number | null;
+  padBottom: number | null;
+  padLeft: number | null;
+  padRight: number | null;
+  // 【对齐 shareCard 分享卡片生成工具】多消息卡片的图片排版：vertical=竖排大图（默认），grid=连续图片两列网格
+  imgLayout: 'vertical' | 'grid';
   bold: boolean;
   showDate: boolean; // 卡片是否显示日期行
   showSignature: boolean; // 卡片是否显示署名行
@@ -331,6 +340,11 @@ const loadStyle = (): {
         const titleAlign: TitleAlign = s.titleAlign === 'left' ? 'left' : 'center';
         // 正文对齐：缺省左对齐
         const bodyAlign: BodyAlign = s.bodyAlign === 'center' || s.bodyAlign === 'right' ? s.bodyAlign : 'left';
+        // 【对齐 shareCard 分享卡片生成工具】自定义四边距：只认 0~80 的有限数字，其余一律当作「跟随边距档位」（null）
+        const padField = (v: unknown) =>
+          typeof v === 'number' && Number.isFinite(v) ? Math.min(80, Math.max(0, Math.round(v))) : null;
+        // 【对齐 shareCard 分享卡片生成工具】图片排版：只有明确存过 grid 才用两列网格，老数据/非法值都按竖排大图
+        const imgLayout: 'vertical' | 'grid' = s.imgLayout === 'grid' ? 'grid' : 'vertical';
         // 标题字号/颜色：与正文解耦；老数据按「正文×1.6（上限32）」和主题色迁移，保证观感不变
         const titleSize = Number.isInteger(s.titleSize) && s.titleSize >= TITLE_MIN && s.titleSize <= TITLE_MAX
           ? s.titleSize
@@ -353,6 +367,12 @@ const loadStyle = (): {
           fontSize: fs,
           fontKey: s.fontKey,
           padKey: s.padKey,
+          // 【对齐 shareCard】自定义四边距 + 图片排版，随样式一起持久化
+          padTop: padField(s.padTop),
+          padBottom: padField(s.padBottom),
+          padLeft: padField(s.padLeft),
+          padRight: padField(s.padRight),
+          imgLayout,
           bold,
           showDate: s.showDate !== false,
           showSignature: s.showSignature !== false,
@@ -386,7 +406,7 @@ const loadStyle = (): {
   } catch {
     // 损坏数据按默认处理
   }
-  return { theme: 'light', fontSize: 16, fontKey: 'default', padKey: 'standard', bold: false, showDate: true, showSignature: true, showNickname: true, showQuote: true, showTitle: true, datePos: 'bottom-left', titleAlign: 'center', bodyAlign: 'left', titleSize: 26 };
+  return { theme: 'light', fontSize: 16, fontKey: 'default', padKey: 'standard', padTop: null, padBottom: null, padLeft: null, padRight: null, imgLayout: 'vertical', bold: false, showDate: true, showSignature: true, showNickname: true, showQuote: true, showTitle: true, datePos: 'bottom-left', titleAlign: 'center', bodyAlign: 'left', titleSize: 26 };
 };
 
 const isMobile = () => /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -470,6 +490,8 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
   });
   // 「修改文本」独立小弹窗：当前打开哪一个（null=都不开）
   const [textEdit, setTextEdit] = useState<TextEditTarget | null>(null);
+  // 【对齐 shareCard 分享卡片生成工具】「自定义边距」小弹窗（上/下/左/右四个滑块 + 单项 ↺ 复位）
+  const [spacingOpen, setSpacingOpen] = useState(false);
   // 日期覆写：仅本次打开生效（进 localStorage 会串到别的消息的卡片上），留空用消息默认日期
   const [dateOverride, setDateOverride] = useState('');
   // 正文覆写（msgId -> 修改后文字）：仅本次打开生效，用于改标点/换行/错别字，不动服务器原消息
@@ -505,7 +527,15 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
   // 标题颜色默认值：按卡片底色明暗自动取黑/白（自定义深底色也能看清）
   const titleColorHex = style.titleColor ?? (isLightColor(t.bg) ? '#000000' : '#F5F5F5');
   const font = FONT_OPTS[style.fontKey].stack;
-  const padding = PAD_OPTS[style.padKey].value;
+  const padBase = PAD_OPTS[style.padKey].value;
+  // 【对齐 shareCard 分享卡片生成工具】自定义边距：null = 跟随当前「边距」档位，数字 = 单独覆盖
+  const padTop = style.padTop ?? padBase;
+  const padBottom = style.padBottom ?? padBase;
+  const padLeft = style.padLeft ?? padBase;
+  const padRight = style.padRight ?? padBase;
+  // 四个方向任一被单独设置过：用于「边距-自定义」按钮高亮
+  const hasCustomPad =
+    style.padTop !== null || style.padBottom !== null || style.padLeft !== null || style.padRight !== null;
   // 「修改正文」编辑框所见即所得：编辑框本体即白色卡片——宽度 = 白色卡片宽度（预览灰框 380 − 灰色内边距 24 = 356），
   // 内边距 = 卡片边距档位；borderWidth 0 去掉输入框自带边框，外形与白卡完全重合，文字区宽度随之精确一致；
   // 字体/字号/加粗/行距也与卡片正文一致（字体不同则每行容纳字符数不同）；窄屏 maxWidth 兜底
@@ -514,7 +544,8 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
     fontSize: style.fontSize,
     fontWeight: style.bold ? 700 : 400,
     lineHeight: 1.8,
-    padding,
+    // 【对齐 shareCard 分享卡片生成工具】编辑框内边距与卡片一致，四边分别取值（支持自定义边距）
+    padding: `${padTop}px ${padRight}px ${padBottom}px ${padLeft}px`,
     width: 356,
     maxWidth: '100%',
     borderWidth: 0,
@@ -526,6 +557,21 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
   // 否则装不下 356px 时灰框溢出、宽度与预览灰框不一致），编辑框 maxWidth:100% 随灰框同步缩放
   const bodyTaFrameCls = `w-[380px] max-w-full p-3 rounded-xl ${isDarkMode ? 'bg-gray-900' : 'bg-gray-200'}`;
   const isMulti = messages.length > 1;
+  // 【对齐 shareCard 分享卡片生成工具】多消息卡片的图片排版分组：
+  // - vertical（竖排大图，默认）：每条消息单独一块
+  // - grid（两列网格）：连续的图片消息合并成一组，遇到文字/文件消息即断开；
+  //   组内只有 1 张时退化为大图（避免只占半幅留白），与 shareCard 的 buildCard 行为一致
+  type MsgBlock = { kind: 'single'; m: ChatMessage } | { kind: 'grid'; ms: ChatMessage[] };
+  const msgBlocks: MsgBlock[] = [];
+  for (const m of messages) {
+    const last = msgBlocks[msgBlocks.length - 1];
+    if (style.imgLayout === 'grid' && m.type === 'image' && m.file) {
+      if (last && last.kind === 'grid') last.ms.push(m);
+      else msgBlocks.push({ kind: 'grid', ms: [m] });
+    } else {
+      msgBlocks.push({ kind: 'single', m });
+    }
+  }
   const date = messages[0].created_at.slice(0, 10);
   const lastDate = messages[messages.length - 1].created_at.slice(0, 10);
   // 跨天的多消息卡片显示日期区间；「修改文本」里改过日期则以覆写为准
@@ -547,8 +593,9 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      // 修改文本小弹窗开着时，Esc 只关它，不连带关整个卡片弹窗
-      if (textEdit) setTextEdit(null);
+      // 修改文本 / 自定义边距小弹窗开着时，Esc 只关它，不连带关整个卡片弹窗
+      if (spacingOpen) setSpacingOpen(false);
+      else if (textEdit) setTextEdit(null);
       else onClose();
     };
     document.addEventListener('keydown', onKey);
@@ -556,7 +603,7 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
       document.removeEventListener('keydown', onKey);
       window.clearTimeout(copyTimer.current);
     };
-  }, [onClose, textEdit]);
+  }, [onClose, textEdit, spacingOpen]);
 
   // 选中（或恢复已保存的）webfont 字体时挂样式表，浏览器按 unicode-range 只下载用到的分片
   useEffect(() => {
@@ -783,13 +830,18 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
   // 一键复位「配色/标题/正文/日期/署名」的用户设置（只动有默认值的样式项，不动标题/署名文字内容）
   const resetUserSettings = () => {
     const ok = window.confirm(
-      '确定把配色、标题、正文、日期、署名的样式设置恢复默认吗？\n（含字号、文字颜色、背景/强调色、标题对齐、日期位置等；不会清空标题和署名文字）',
+      '确定把配色、标题、正文、日期、署名的样式设置恢复默认吗？\n（含字号、文字颜色、背景/强调色、标题对齐、日期位置、自定义边距等；不会清空标题和署名文字）',
     );
     if (!ok) return;
     setStyle((s) => ({
       ...s,
       fontSize: 16,
       bold: false,
+      // 【对齐 shareCard】自定义四边距一并恢复为「跟随档位」
+      padTop: null,
+      padBottom: null,
+      padLeft: null,
+      padRight: null,
       titleSize: 26,
       titleColor: undefined,
       titleAlign: 'center',
@@ -814,6 +866,14 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
   const dateColorHex = style.dateColor ?? t.aux;
   const sigFontSize = style.sigSize ?? auxSize;
   const sigColorHex = style.sigColor ?? t.aux;
+
+  // 【对齐 shareCard 分享卡片生成工具】自定义四边距的写入：value 传 null 表示恢复「跟随边距档位」
+  const setPad = (key: PadKey, value: number | null) =>
+    setStyle((s) => {
+      const next = { ...s };
+      next[key] = value;
+      return next;
+    });
 
   // 日期四个角：左上/右上与引号、标题同一行；左上角额外让出一行，避免盖住大引号
   const dateTopLeft = style.showDate && style.datePos === 'top-left';
@@ -1041,6 +1101,46 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
   };
   const removeTitle = (name: string) => setTitles((prev) => prev.filter((n) => n !== name));
 
+  // 【对齐 shareCard 分享卡片生成工具】单条消息的「昵称 + 内容」渲染，供竖排大图 / 两列网格共用
+  const renderMsgBlock = (m: ChatMessage) => (
+    <>
+      {style.showNickname && nickOf(m).trim() !== '' && (
+        <div style={{ color: m.color || t.aux, fontSize: auxSize, fontFamily: BASE_FONT, lineHeight: 1.4 }}>
+          {nickOf(m)}
+        </div>
+      )}
+      {m.type === 'image' && m.file ? (
+        imgMap[m.id] ? (
+          <img
+            src={imgMap[m.id]}
+            alt={m.file.name}
+            style={{ maxWidth: '100%', borderRadius: 8, marginTop: 4, display: 'block' }}
+          />
+        ) : (
+          <div style={{ color: t.aux, fontSize: auxSize, fontFamily: BASE_FONT, marginTop: 4 }}>
+            [图片加载中…]
+          </div>
+        )
+      ) : (
+        <p
+          className="whitespace-pre-wrap break-all"
+          style={
+            {
+              color: style.bodyColor ?? t.text,
+              fontWeight: style.bold ? 700 : 400,
+              textAlign: style.bodyAlign,
+              textIndent: 0,
+              hangingPunctuation: 'none',
+              WebkitPunctuationTrim: 'none',
+            } as React.CSSProperties
+          }
+        >
+          {m.type === 'text' ? contentOf(m) : `[文件] ${m.file?.name ?? ''}`}
+        </p>
+      )}
+    </>
+  );
+
   return (
     <>
       <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[70] p-4" onClick={onClose}>
@@ -1159,11 +1259,28 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
                 )}
               </>,
             )}
+            {/* 【对齐 shareCard 分享卡片生成工具】边距：四个档位 + 「自定义」（四边滑块）。
+                切换档位时清空单独设过的四边距，重新跟随档位；自定义过时「自定义」按钮高亮 */}
             {settingRow(
               '边距',
-              Object.entries(PAD_OPTS).map(([key, o]) =>
-                optBtn(style.padKey === key, () => setStyle((s) => ({ ...s, padKey: key })), o.label),
-              ),
+              <>
+                {Object.entries(PAD_OPTS).map(([key, o]) =>
+                  optBtn(
+                    style.padKey === key,
+                    () =>
+                      setStyle((s) => ({
+                        ...s,
+                        padKey: key,
+                        padTop: null,
+                        padBottom: null,
+                        padLeft: null,
+                        padRight: null,
+                      })),
+                    o.label,
+                  ),
+                )}
+                {optBtn(hasCustomPad, () => setSpacingOpen(true), '自定义')}
+              </>,
             )}
             {/* 修改：配色/标题/正文/日期/署名/昵称（昵称仅多消息卡片）各自独立小弹窗，改哪项点哪项 */}
             {settingRow(
@@ -1188,6 +1305,17 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
                 {toggleBtn(style.showNickname, () => setStyle((s) => ({ ...s, showNickname: !s.showNickname })), '昵称')}
                 {toggleBtn(style.showDate, () => setStyle((s) => ({ ...s, showDate: !s.showDate })), '日期')}
                 {toggleBtn(style.showSignature, () => setStyle((s) => ({ ...s, showSignature: !s.showSignature })), '署名')}
+                {/* 【对齐 shareCard 分享卡片生成工具】多消息卡片的图片排版：竖排大图（默认）/ 两列网格 */}
+                {toggleBtn(
+                  style.imgLayout === 'vertical',
+                  () => setStyle((s) => ({ ...s, imgLayout: 'vertical' })),
+                  '竖排大图',
+                )}
+                {toggleBtn(
+                  style.imgLayout === 'grid',
+                  () => setStyle((s) => ({ ...s, imgLayout: 'grid' })),
+                  '两列网格',
+                )}
               </>,
             )}
           </div>
@@ -1199,7 +1327,14 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
                 {/* 卡片容器保持直角：圆角会让导出 PNG 四角透明，在微信里被渲染成黑色角；预览与导出一致（所见即所得） */}
                 <div
                   ref={cardRef}
-                  style={{ backgroundColor: t.bg, fontFamily: font, fontSize: style.fontSize, lineHeight: 1.8, padding }}
+                  style={{
+                    backgroundColor: t.bg,
+                    fontFamily: font,
+                    fontSize: style.fontSize,
+                    lineHeight: 1.8,
+                    // 【对齐 shareCard 分享卡片生成工具】支持自定义四边距，未设置的方向跟随「边距」档位
+                    padding: `${padTop}px ${padRight}px ${padBottom}px ${padLeft}px`,
+                  }}
                 >
                   {/* 顶部：装饰双引号（左）+ 标题（居中，与双引号同行；黑体，字号/颜色在「修改标题」里单独设置，与正文解耦）。
                       标题用绝对定位居中，不挤动双引号；标题显示时容器保底行高，避免双引号关闭后正文贴顶。
@@ -1285,42 +1420,60 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
                   {isMulti ? (
                     // 多消息卡片：每条一块——文字渲染昵称+正文，图片渲染昵称+图片（内部元素圆角保留）
                     <div style={{ marginTop: 10 }}>
-                      {messages.map((m, i) => (
-                        <div key={m.id} style={{ marginTop: i === 0 ? 0 : 16 }}>
-                          {/* 昵称行：可用「显示-昵称」开关隐藏（多消息卡片）；「修改昵称」清空后该行也不显示 */}
-                          {style.showNickname && nickOf(m).trim() !== '' && (
-                            <div style={{ color: m.color || t.aux, fontSize: auxSize, fontFamily: BASE_FONT, lineHeight: 1.4 }}>
-                              {nickOf(m)}
-                            </div>
-                          )}
-                          {m.type === 'image' && m.file ? (
-                            imgMap[m.id] ? (
-                              <img
-                                src={imgMap[m.id]}
-                                alt={m.file.name}
-                                style={{ maxWidth: '100%', borderRadius: 8, marginTop: 4, display: 'block' }}
-                              />
-                            ) : (
-                              <div style={{ color: t.aux, fontSize: auxSize, fontFamily: BASE_FONT, marginTop: 4 }}>
-                                [图片加载中…]
-                              </div>
-                            )
+                      {/* 【对齐 shareCard】按 msgBlocks 渲染：竖排大图逐条渲染；两列网格把连续图片合并成一组 */}
+                      {msgBlocks.map((blk, i) => (
+                        <div
+                          key={blk.kind === 'grid' ? `g-${blk.ms[0].id}` : blk.m.id}
+                          style={{ marginTop: i === 0 ? 0 : 16 }}
+                        >
+                          {blk.kind === 'grid' ? (
+                            <>
+                              {/* 昵称取组内第一条（与 shareCard 一致）；组内仅 1 张时仍按大图铺满 */}
+                              {style.showNickname && nickOf(blk.ms[0]).trim() !== '' && (
+                                <div
+                                  style={{
+                                    color: blk.ms[0].color || t.aux,
+                                    fontSize: auxSize,
+                                    fontFamily: BASE_FONT,
+                                    lineHeight: 1.4,
+                                  }}
+                                >
+                                  {nickOf(blk.ms[0])}
+                                </div>
+                              )}
+                              {blk.ms.length === 1 ? (
+                                renderMsgBlock(blk.ms[0])
+                              ) : (
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 4 }}>
+                                  {blk.ms.map((g) =>
+                                    imgMap[g.id] ? (
+                                      <img
+                                        key={g.id}
+                                        src={imgMap[g.id]}
+                                        alt={g.file?.name}
+                                        style={{
+                                          width: '100%',
+                                          height: 'auto',
+                                          borderRadius: 8,
+                                          display: 'block',
+                                          // 两列网格里图片本身不需要再留上边距（间距由 grid gap 控制）
+                                          marginTop: 0,
+                                        }}
+                                      />
+                                    ) : (
+                                      <div
+                                        key={g.id}
+                                        style={{ color: t.aux, fontSize: auxSize, fontFamily: BASE_FONT }}
+                                      >
+                                        [图片加载中…]
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
+                              )}
+                            </>
                           ) : (
-                            <p
-                              className="whitespace-pre-wrap break-all"
-                              style={
-                                {
-                                  color: style.bodyColor ?? t.text,
-                                  fontWeight: style.bold ? 700 : 400,
-                                  textAlign: style.bodyAlign,
-                                  textIndent: 0,
-                                  hangingPunctuation: 'none',
-                                  WebkitPunctuationTrim: 'none',
-                                } as React.CSSProperties
-                              }
-                            >
-                              {m.type === 'text' ? contentOf(m) : `[文件] ${m.file?.name ?? ''}`}
-                            </p>
+                            renderMsgBlock(blk.m)
                           )}
                         </div>
                       ))}
@@ -1875,6 +2028,74 @@ export const ShareCardModal = ({ messages, cardSignature, groupName, isDarkMode,
             <div className={`p-4 border-t flex-shrink-0 ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
               <button
                 onClick={() => setTextEdit(null)}
+                className="w-full py-2.5 rounded-xl text-sm font-medium bg-green-500 text-white hover:bg-green-600 transition-colors"
+              >
+                完成
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 【对齐 shareCard 分享卡片生成工具】「自定义边距」弹窗：
+          四个方向各一个 0~80px 滑块（默认值 = 当前边距档位），点 ↺ 单项恢复「跟随档位」；
+          拖动即时生效到卡片预览，点「完成」关闭。视觉层级高于卡片弹窗（z-[80]）。 */}
+      {spacingOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80] p-4"
+          onClick={() => setSpacingOpen(false)}
+        >
+          <div
+            className={`rounded-2xl shadow-xl w-full max-w-md flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className={`flex items-center justify-between p-4 border-b flex-shrink-0 ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}
+            >
+              <h3 className={`text-base font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>自定义边距</h3>
+              <button
+                onClick={() => setSpacingOpen(false)}
+                className={`p-1.5 rounded-lg ${isDarkMode ? 'text-gray-400 hover:bg-gray-700' : 'text-gray-400 hover:bg-gray-100'}`}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                默认跟随「边距」档位（{padBase}px），拖动滑块单独覆盖，点 ↺ 恢复跟随。
+              </p>
+              {(
+                [
+                  ['padTop', '上边距', style.padTop, padTop],
+                  ['padBottom', '下边距', style.padBottom, padBottom],
+                  ['padLeft', '左边距', style.padLeft, padLeft],
+                  ['padRight', '右边距', style.padRight, padRight],
+                ] as const
+              ).map(([key, label, customValue, currentValue]) => (
+                <div key={key} className="flex items-center gap-2">
+                  <span className={`w-14 flex-shrink-0 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                    {label}
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={80}
+                    value={currentValue}
+                    onChange={(e) => setPad(key, Number(e.target.value))}
+                    className="flex-1 min-w-[100px] accent-green-500"
+                  />
+                  <span className={`w-10 text-right text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {currentValue}px
+                  </span>
+                  {resetBtn(customValue === null, () => setPad(key, null), `恢复默认${label}（跟随边距档位）`)}
+                </div>
+              ))}
+            </div>
+
+            <div className={`p-4 border-t flex-shrink-0 ${isDarkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+              <button
+                onClick={() => setSpacingOpen(false)}
                 className="w-full py-2.5 rounded-xl text-sm font-medium bg-green-500 text-white hover:bg-green-600 transition-colors"
               >
                 完成

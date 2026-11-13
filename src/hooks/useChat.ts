@@ -428,6 +428,22 @@ export const useChat = (
     }
   }, [messages]);
 
+  // 批量删除消息（仅群主/副群主在群聊可用，服务端仍是逐条删除）：先本地软删除，任一失败则整体回滚
+  const deleteMessages = useCallback(async (ids: number[]) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const targets = new Map(messages.filter((m) => idSet.has(m.id)).map((m) => [m.id, m]));
+    setMessages((prev) =>
+      prev.map((m) => (idSet.has(m.id) ? { ...m, deleted: 1, content: '', file: null } : m)),
+    );
+    try {
+      await Promise.all(ids.map((id) => api.messagesDelete(id)));
+    } catch (e) {
+      setMessages((prev) => prev.map((m) => targets.get(m.id) ?? m));
+      throw e;
+    }
+  }, [messages]);
+
   // 撤回消息（作者本人 2 分钟内，本地立即标记 recalled，轮询同步其他设备）
   const recallMessage = useCallback(async (id: number) => {
     const target = messages.find((m) => m.id === id);
@@ -512,6 +528,7 @@ export const useChat = (
     sendText,
     sendFileMessage,
     deleteMessage,
+    deleteMessages,
     recallMessage,
     setTodoStatus,
     setColorStatus,
